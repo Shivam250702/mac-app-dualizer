@@ -16,9 +16,20 @@
     "clone",
     "dual",
     "multi-account",
-    "multiple-instances"
+    "multiple-instances",
+    "claude",
+    "claude-code"
   ],
+  "author": "vishalmeena2211",
   "license": "MIT",
+  "homepage": "https://github.com/vishalmeena2211/mac-app-dualizer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishalmeena2211/mac-app-dualizer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vishalmeena2211/mac-app-dualizer/issues"
+  },
   "devDependencies": {
     "electron": "^31.0.0"
   },
