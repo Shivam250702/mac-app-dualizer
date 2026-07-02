@@ -34,6 +34,7 @@
     "electron": "^31.0.0"
   },
   "dependencies": {
-    "@electron/asar": "^3.2.10"
+    "@electron/asar": "^3.2.10",
+    "pngjs": "^7.0.0"
   }
 }

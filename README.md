@@ -92,6 +92,28 @@ from the original — so you can log into a **different account**.
 | `--dest-dir DIR` | Where to write the clone (default: same folder as the source) |
 | `--no-isolate` | Don't inject a separate data directory (Electron only) |
 | `--strip-schemes` | Remove the app's custom URL schemes from the clone (see below) |
+| `--tint "#RRGGBB"` | Icon badge color (default: auto-picked from the name) |
+| `--no-tint` | Don't badge the clone's icon |
+
+### Managing clones
+
+Every clone is recorded in `~/.config/mac-app-dualizer/clones.json`, so you can
+manage them with the `dualize` command:
+
+```bash
+node bin/dualize.js list                 # show clones + health (ok / needs repair / missing)
+node bin/dualize.js repair "Slack Work"  # re-apply after an app auto-update (keeps the login)
+node bin/dualize.js repair --all         # repair every unhealthy clone
+node bin/dualize.js remove "Slack Work"  # delete the clone (add --purge to also delete its data)
+```
+
+**Distinct icons.** Each clone gets a small colored badge on its icon (auto-picked
+from its name, or set with `--tint`) so you can tell instances apart in the Dock
+and Cmd-Tab. If the new icon doesn't refresh immediately, run `killall Dock`.
+
+**Repair after updates.** When an app auto-updates it overwrites the clone's
+bundle (reverting the rename/injection/signature). `dualize repair` detects this
+and re-applies the patch — your **data directory / login is untouched**.
 
 ---
 
