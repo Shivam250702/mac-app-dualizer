@@ -46,10 +46,26 @@ ipcMain.handle('pick-app', async () => {
     filters: [{ name: 'Applications', extensions: ['app'] }],
   });
   if (res.canceled || res.filePaths.length === 0) return null;
-  const appPath = res.filePaths[0];
-  const info = readAppInfo(appPath);
-  return { path: appPath, ...info };
+  return inspectApp(res.filePaths[0]);
 });
+
+// Inspect an app path (used by Browse and by drag-and-drop).
+ipcMain.handle('inspect-app', async (_e, appPath) => {
+  if (!appPath || !appPath.endsWith('.app') || !fs.existsSync(appPath)) return null;
+  return inspectApp(appPath);
+});
+
+async function inspectApp(appPath) {
+  const info = readAppInfo(appPath);
+  let icon = null;
+  try {
+    const img = await app.getFileIcon(appPath, { size: 'large' });
+    if (img && !img.isEmpty()) icon = img.toDataURL();
+  } catch {
+    /* icon is optional */
+  }
+  return { path: appPath, icon, ...info };
+}
 
 // Run the clone script, streaming output back to the renderer.
 ipcMain.handle('clone-app', async (event, opts) => {

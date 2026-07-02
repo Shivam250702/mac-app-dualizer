@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dualizer', {
   pickApp: () => ipcRenderer.invoke('pick-app'),
+  inspectApp: (appPath) => ipcRenderer.invoke('inspect-app', appPath),
   cloneApp: (opts) => ipcRenderer.invoke('clone-app', opts),
   launchApp: (name) => ipcRenderer.invoke('launch-app', name),
   revealApp: (appPath) => ipcRenderer.invoke('reveal-app', appPath),

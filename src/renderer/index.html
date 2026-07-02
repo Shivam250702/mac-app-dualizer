@@ -3,61 +3,104 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
   <title>Mac App Dualizer</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
-    <h1>Mac App Dualizer</h1>
-    <p class="sub">Clone any macOS app into a second, independent instance — its own data, its own login.</p>
-  </header>
+  <div class="titlebar"></div>
 
-  <main>
+  <div class="wrap">
+    <header class="hero">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="34" height="34">
+          <rect x="7" y="7" width="26" height="26" rx="6" class="glyph-back" />
+          <rect x="15" y="15" width="26" height="26" rx="6" class="glyph-front" />
+        </svg>
+      </div>
+      <div>
+        <h1>App Dualizer</h1>
+        <p class="sub">Run two independent copies of a Mac app — separate data, separate login.</p>
+      </div>
+    </header>
+
+    <!-- STEP 1 — choose app -->
     <section class="card">
-      <label class="field">
-        <span>1 · App to clone</span>
-        <div class="row">
-          <input id="source" type="text" placeholder="/Applications/Claude.app" readonly />
-          <button id="browse" class="secondary">Browse…</button>
+      <div class="step-label"><span class="num">1</span> Choose an app</div>
+
+      <div id="drop" class="dropzone" tabindex="0">
+        <div id="dropEmpty" class="dropzone-empty">
+          <svg viewBox="0 0 24 24" width="26" height="26" class="drop-icon">
+            <path d="M12 16V4m0 0L7 9m5-5 5 5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+          </svg>
+          <p>Drag an app here <span>or</span></p>
+          <button id="browse" class="btn ghost">Browse Applications…</button>
         </div>
-        <small id="appInfo" class="muted"></small>
-      </label>
+
+        <div id="dropFilled" class="dropzone-filled hidden">
+          <img id="appIcon" class="app-icon" alt="" />
+          <div class="app-meta">
+            <div id="appName" class="app-name"></div>
+            <div id="appId" class="app-id"></div>
+            <span id="appBadge" class="badge"></span>
+          </div>
+          <button id="change" class="btn ghost small">Change</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2 — configure -->
+    <section id="configCard" class="card is-disabled">
+      <div class="step-label"><span class="num">2</span> Name &amp; options</div>
 
       <label class="field">
-        <span>2 · Name for the clone</span>
-        <input id="name" type="text" placeholder="Claude 2" />
+        <span class="field-label">Clone name</span>
+        <input id="name" type="text" placeholder="e.g. Claude 2" autocomplete="off" spellcheck="false" />
+        <small id="nameHint" class="hint"></small>
       </label>
 
       <div class="options">
-        <label class="check">
+        <label class="opt">
           <input id="isolate" type="checkbox" checked />
-          <span>Separate data directory <em>(recommended — enables a second login)</em></span>
+          <span class="opt-body">
+            <span class="opt-title">Separate data directory</span>
+            <span class="opt-desc">Gives the clone its own login. Recommended.</span>
+          </span>
         </label>
-        <label class="check">
+        <label class="opt">
           <input id="stripSchemes" type="checkbox" />
-          <span>Remove custom URL schemes <em>(avoids competing for deep links)</em></span>
+          <span class="opt-body">
+            <span class="opt-title">Remove custom URL schemes</span>
+            <span class="opt-desc">Stops the clone from competing for deep links.</span>
+          </span>
         </label>
       </div>
-
-      <button id="clone" class="primary" disabled>Clone app</button>
     </section>
 
-    <section class="card">
-      <div class="log-head">
-        <span>Output</span>
-        <div class="actions hidden" id="doneActions">
-          <button id="launch" class="secondary">Launch clone</button>
-          <button id="reveal" class="secondary">Show in Finder</button>
-        </div>
+    <!-- ACTION -->
+    <button id="clone" class="btn primary" disabled>
+      <span class="btn-label">Clone app</span>
+      <span class="spinner" aria-hidden="true"></span>
+    </button>
+
+    <!-- RESULT -->
+    <section id="result" class="card result hidden">
+      <div class="result-head">
+        <span id="resultIcon" class="result-badge"></span>
+        <span id="resultText"></span>
       </div>
-      <pre id="log" class="log">Pick an app to begin…</pre>
+      <div id="doneActions" class="result-actions hidden">
+        <button id="launch" class="btn ghost small">Launch clone</button>
+        <button id="reveal" class="btn ghost small">Show in Finder</button>
+      </div>
+      <details class="log-wrap">
+        <summary>Show log</summary>
+        <pre id="log" class="log"></pre>
+      </details>
     </section>
-  </main>
 
-  <footer>
-    <span>Clone only apps you're licensed to use. Respect each app's Terms of Service.</span>
-  </footer>
+    <footer>Clone only apps you're licensed to use. Respect each app's Terms of Service.</footer>
+  </div>
 
   <script src="renderer.js"></script>
 </body>
