@@ -1,0 +1,28 @@
+{
+  "name": "mac-app-dualizer",
+  "version": "1.0.0",
+  "description": "Clone any macOS app to run a second, fully independent instance with its own data directory and login. CLI + Electron GUI.",
+  "main": "src/main.js",
+  "bin": {
+    "dualize": "bin/dualize.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "clone": "bash clone-app.sh"
+  },
+  "keywords": [
+    "macos",
+    "electron",
+    "clone",
+    "dual",
+    "multi-account",
+    "multiple-instances"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  },
+  "dependencies": {
+    "@electron/asar": "^3.2.10"
+  }
+}

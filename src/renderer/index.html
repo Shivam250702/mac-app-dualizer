@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Mac App Dualizer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Mac App Dualizer</h1>
+    <p class="sub">Clone any macOS app into a second, independent instance — its own data, its own login.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <label class="field">
+        <span>1 · App to clone</span>
+        <div class="row">
+          <input id="source" type="text" placeholder="/Applications/Claude.app" readonly />
+          <button id="browse" class="secondary">Browse…</button>
+        </div>
+        <small id="appInfo" class="muted"></small>
+      </label>
+
+      <label class="field">
+        <span>2 · Name for the clone</span>
+        <input id="name" type="text" placeholder="Claude 2" />
+      </label>
+
+      <div class="options">
+        <label class="check">
+          <input id="isolate" type="checkbox" checked />
+          <span>Separate data directory <em>(recommended — enables a second login)</em></span>
+        </label>
+        <label class="check">
+          <input id="stripSchemes" type="checkbox" />
+          <span>Remove custom URL schemes <em>(avoids competing for deep links)</em></span>
+        </label>
+      </div>
+
+      <button id="clone" class="primary" disabled>Clone app</button>
+    </section>
+
+    <section class="card">
+      <div class="log-head">
+        <span>Output</span>
+        <div class="actions hidden" id="doneActions">
+          <button id="launch" class="secondary">Launch clone</button>
+          <button id="reveal" class="secondary">Show in Finder</button>
+        </div>
+      </div>
+      <pre id="log" class="log">Pick an app to begin…</pre>
+    </section>
+  </main>
+
+  <footer>
+    <span>Clone only apps you're licensed to use. Respect each app's Terms of Service.</span>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
