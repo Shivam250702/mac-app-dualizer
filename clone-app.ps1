@@ -66,7 +66,11 @@ param(
   [string]$Source,
   [string]$Name,
   [Alias('dest-dir')][string]$DestDir,
-  [ValidateSet('clone', 'link')][string]$Mode = 'clone',
+  # Deliberately no [ValidateSet]: the attribute binds to the *variable*, so a
+  # later `$Mode = ...` from the --mode parser would throw a raw PowerShell
+  # validation exception. Mode is checked explicitly below instead, which covers
+  # the -Mode and --mode spellings alike.
+  [string]$Mode = 'clone',
   [Alias('no-isolate')][switch]$NoIsolate,
   [switch]$Desktop,
   [string]$Tint,
