@@ -159,8 +159,17 @@ function remove() {
   const dest = entry ? entry.dest : IS_MAC ? `/Applications/${name}.app` : null;
 
   if (dest && fs.existsSync(dest)) {
-    rmrf(dest);
-    console.log(`Removed ${dest}`);
+    try {
+      rmrf(dest);
+      console.log(`Removed ${dest}`);
+    } catch (e) {
+      // Almost always because the clone is still running and Windows keeps a
+      // lock on its executable.
+      return fail(
+        `Could not remove ${dest}: ${e.message}\n` +
+          'Quit the clone if it is running, then try again.'
+      );
+    }
   } else if (entry && entry.mode === 'link') {
     console.log('Link clone: the original app is left untouched.');
   } else {

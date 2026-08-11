@@ -25,6 +25,27 @@ const { cloneWindowsApp, healthOf, SENTINEL } = require('../src/win/clone');
 const { sampleExe } = require('../tools/pe-fixture');
 const { rmrf } = require('../src/platform');
 
+/**
+ * Best-effort temp cleanup.
+ *
+ * @electron/asar caches an archive's parsed header along with the open file
+ * handle behind it, and Windows refuses to delete a directory while any handle
+ * inside it is open. Dropping the cache first releases the archive; if the
+ * delete still fails we let it go, since these live in the OS temp directory.
+ */
+function cleanup(target) {
+  try {
+    asar.uncacheAll();
+  } catch {
+    /* older releases may not expose it */
+  }
+  try {
+    rmrf(target);
+  } catch {
+    /* a leftover temp directory is not worth failing a test over */
+  }
+}
+
 const IS_WINDOWS = process.platform === 'win32';
 
 function tmpdir() {
@@ -91,7 +112,7 @@ test('findMainExe ignores bundled updaters and uninstallers', async () => {
   const dir = await makeInstall(root, 'Demo App');
   fs.writeFileSync(path.join(dir, 'Uninstall Demo App.exe'), 'x');
   assert.strictEqual(path.basename(findMainExe(dir)), 'Demo App.exe');
-  rmrf(root);
+  cleanup(root);
 });
 
 test('inspectApp reads an install directory or the exe directly', async () => {
@@ -108,14 +129,14 @@ test('inspectApp reads an install directory or the exe directly', async () => {
     assert.strictEqual(info.hasAsarIntegrity, false);
     assert.strictEqual(path.basename(info.exe), 'Demo App.exe');
   }
-  rmrf(root);
+  cleanup(root);
 });
 
 test('inspectApp flags an app that enforces asar integrity', async () => {
   const root = tmpdir();
   const dir = await makeInstall(root, 'Locked App', { asarIntegrity: true });
   assert.strictEqual(inspectApp(dir).hasAsarIntegrity, true);
-  rmrf(root);
+  cleanup(root);
 });
 
 test('inspectApp reports non-Electron installs without an asar', async () => {
@@ -124,7 +145,7 @@ test('inspectApp reports non-Electron installs without an asar', async () => {
   const info = inspectApp(dir);
   assert.strictEqual(info.isElectron, false);
   assert.strictEqual(info.asarPath, null);
-  rmrf(root);
+  cleanup(root);
 });
 
 test('inspectApp declines things that are not apps', () => {
@@ -134,7 +155,7 @@ test('inspectApp declines things that are not apps', () => {
   fs.writeFileSync(path.join(root, 'readme.txt'), 'hi');
   assert.strictEqual(inspectApp(path.join(root, 'readme.txt')), null);
   assert.strictEqual(inspectApp(root), null, 'a directory with no exe');
-  rmrf(root);
+  cleanup(root);
 });
 
 // --- full clone --------------------------------------------------------------
@@ -190,7 +211,7 @@ test('cloneWindowsApp copies, renames, injects, and badges', async () => {
     );
   }
 
-  rmrf(root);
+  cleanup(root);
 });
 
 test('cloneWindowsApp skips injection when asar integrity is enforced', async () => {
@@ -224,7 +245,7 @@ test('cloneWindowsApp skips injection when asar integrity is enforced', async ()
   const after = fs.readFileSync(path.join(dest, 'Locked Two', 'resources', 'app.asar'));
   assert.ok(before.equals(after), 'app.asar was not modified');
 
-  rmrf(root);
+  cleanup(root);
 });
 
 test('cloneWindowsApp in link mode copies nothing', async () => {
@@ -253,7 +274,7 @@ test('cloneWindowsApp in link mode copies nothing', async () => {
     fs.readFileSync(path.join(src, 'resources', 'app.asar')).equals(before),
     'the original app is untouched either way'
   );
-  rmrf(root);
+  cleanup(root);
 });
 
 test('cloneWindowsApp rejects a bad name before touching the disk', async () => {
@@ -266,7 +287,7 @@ test('cloneWindowsApp rejects a bad name before touching the disk', async () => 
     assert.strictEqual(res.ok, false, `"${bad}" should be rejected`);
   }
   assert.ok(!fs.existsSync(dest), 'nothing was written');
-  rmrf(root);
+  cleanup(root);
 });
 
 test('cloneWindowsApp refuses to overwrite an existing clone', async () => {
@@ -281,7 +302,7 @@ test('cloneWindowsApp refuses to overwrite an existing clone', async () => {
   );
   assert.strictEqual(res.ok, false);
   assert.match(res.error, /already exists/);
-  rmrf(root);
+  cleanup(root);
 });
 
 test('cloneWindowsApp reports a source that does not exist', async () => {

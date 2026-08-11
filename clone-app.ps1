@@ -73,6 +73,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# Write-Error would be a *terminating* error under the Stop preference above,
+# so a validation failure would surface as a PowerShell exception stack instead
+# of a clean message and a 1 exit code. Report and exit explicitly.
+function Fail([string]$Message) {
+  [Console]::Error.WriteLine($Message)
+  exit 1
+}
+
 # PowerShell splits `--source` into an unbound argument rather than a parameter,
 # so fold any GNU-style flags from $Rest back into the typed parameters above.
 if ($Rest) {
@@ -89,29 +97,23 @@ if ($Rest) {
       '^--desktop$'    { $Desktop = $true }
       '^--no-tint$'    { $NoTint = $true }
       '^-h$|^--help$'  { Get-Help $MyInvocation.MyCommand.Path -Detailed; exit 0 }
-      default {
-        Write-Error "Unknown argument: $token"
-        exit 1
-      }
+      default { Fail "Unknown argument: $token" }
     }
   }
 }
 
 if (-not $Source -or -not $Name) {
-  Write-Error 'error: -Source and -Name are required. Run with -? for help.'
-  exit 1
+  Fail 'error: -Source and -Name are required. Run with -? for help.'
 }
 
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
-  Write-Error 'error: Node.js 18+ is required but was not found on PATH. See https://nodejs.org'
-  exit 1
+  Fail 'error: Node.js 18+ is required but was not found on PATH. See https://nodejs.org'
 }
 
 $dualize = Join-Path $root 'bin\dualize.js'
 if (-not (Test-Path $dualize)) {
-  Write-Error "error: bin\dualize.js is missing at $dualize"
-  exit 1
+  Fail "error: bin\dualize.js is missing at $dualize"
 }
 
 $argList = @('clone', '--source', $Source, '--name', $Name, '--mode', $Mode)
