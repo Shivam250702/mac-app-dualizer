@@ -87,8 +87,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $out = & .\clone-app.ps1 -Name "No Source" 2>&1 | Out-String
+          # Run as a child process: the script reports failures on real stderr,
+          # which an in-process call's 2>&1 would not capture.
+          $out = pwsh -NoProfile -File .\clone-app.ps1 -Name "No Source" 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0) { Write-Host '::error::expected a non-zero exit'; exit 1 }
+          if ($out -notlike '*-Source and -Name are required*') {
+            Write-Host "::error::unexpected message: $out"; exit 1
+          }
           Write-Host "declined as expected: $out"
           # The Actions pwsh wrapper exits with $LASTEXITCODE, which is the 1 we
           # just asserted on — so reset it or the step inherits the failure.
@@ -140,7 +145,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $out = & .\clone-app.ps1 --source "x" --name "y" --mode nonsense 2>&1 | Out-String
+          $out = pwsh -NoProfile -File .\clone-app.ps1 --source "x" --name "y" --mode nonsense 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0) { Write-Host '::error::bad --mode should not succeed'; exit 1 }
           if ($out -notlike "*must be 'clone' or 'link'*") {
             Write-Host "::error::unexpected message: $out"; exit 1
