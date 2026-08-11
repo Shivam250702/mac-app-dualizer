@@ -136,12 +136,30 @@ jobs:
           if ($entry -notlike '*com.dualizer.fake-two*') { Write-Error 'AppUserModelID missing'; exit 1 }
           Write-Host 'clone verified'
 
+      - name: Wrapper rejects a bad --mode value
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = & .\clone-app.ps1 --source "x" --name "y" --mode nonsense 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) { Write-Host '::error::bad --mode should not succeed'; exit 1 }
+          if ($out -notlike "*must be 'clone' or 'link'*") {
+            Write-Host "::error::unexpected message: $out"; exit 1
+          }
+          Write-Host "declined as expected: $out"
+          exit 0
+
       - name: Clone a synthetic app (GNU --flag form, link mode)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           & .\clone-app.ps1 --source "$env:RUNNER_TEMP\FakeApp\Fake App.exe" --name "Fake Link" --mode link
-          if ($LASTEXITCODE -ne 0) { Write-Error 'link-mode clone failed'; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Write-Host '::error::link-mode clone failed'; exit 1 }
+
+          # A --flag value landing in the wrong parameter is exactly the bug this
+          # form is here to catch, so check the name really became the name.
+          if (Test-Path "$env:RUNNER_TEMP\Programs\Fake Link") {
+            Write-Host '::error::link mode must not copy the app'; exit 1
+          }
 
           $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Fake Link.lnk"
           if (-not (Test-Path $lnk)) { Write-Error 'missing link-mode shortcut'; exit 1 }

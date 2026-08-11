@@ -56,7 +56,12 @@
 # binds to $Source — declaring it as an alias too is an error. Only genuinely
 # different spellings are aliased here; the GNU-style `--flag` forms are folded
 # in from $Rest below.
-[CmdletBinding()]
+#
+# PositionalBinding is off on purpose. PowerShell does not recognise `--source`
+# as a parameter name, so with positional binding on it would bind the *values*
+# by position instead — quietly landing "Slack Work" in -Mode. With it off,
+# every unrecognised token falls through to $Rest in order and is parsed there.
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [string]$Source,
   [string]$Name,
@@ -81,29 +86,44 @@ function Fail([string]$Message) {
   exit 1
 }
 
-# PowerShell splits `--source` into an unbound argument rather than a parameter,
-# so fold any GNU-style flags from $Rest back into the typed parameters above.
-if ($Rest) {
-  for ($i = 0; $i -lt $Rest.Count; $i++) {
-    $token = $Rest[$i]
-    $value = if ($i + 1 -lt $Rest.Count) { $Rest[$i + 1] } else { $null }
-    switch -Regex ($token) {
-      '^--source$'     { $Source = $value; $i++ }
-      '^--name$'       { $Name = $value; $i++ }
-      '^--dest-dir$'   { $DestDir = $value; $i++ }
-      '^--mode$'       { $Mode = $value; $i++ }
-      '^--tint$'       { $Tint = $value; $i++ }
-      '^--no-isolate$' { $NoIsolate = $true }
-      '^--desktop$'    { $Desktop = $true }
-      '^--no-tint$'    { $NoTint = $true }
-      '^-h$|^--help$'  { Get-Help $MyInvocation.MyCommand.Path -Detailed; exit 0 }
-      default { Fail "Unknown argument: $token" }
-    }
+# Fold any GNU-style flags from $Rest back into the typed parameters above, so
+# the command line reads the same as the macOS script's.
+if ($null -eq $Rest) { $Rest = @() }
+$i = 0
+while ($i -lt $Rest.Count) {
+  $token = $Rest[$i]
+  $needsValue = $token -in @('--source', '--name', '--dest-dir', '--mode', '--tint')
+  if ($needsValue -and $i + 1 -ge $Rest.Count) {
+    Fail "error: $token expects a value"
   }
+  $value = if ($needsValue) { $Rest[$i + 1] } else { $null }
+
+  switch ($token) {
+    '--source'     { $Source = $value }
+    '--name'       { $Name = $value }
+    '--dest-dir'   { $DestDir = $value }
+    '--mode'       { $Mode = $value }
+    '--tint'       { $Tint = $value }
+    '--no-isolate' { $NoIsolate = $true }
+    '--desktop'    { $Desktop = $true }
+    '--no-tint'    { $NoTint = $true }
+    { $_ -in @('-h', '--help') } {
+      Get-Help $MyInvocation.MyCommand.Path -Detailed
+      exit 0
+    }
+    default { Fail "Unknown argument: $token" }
+  }
+  if ($needsValue) { $i += 2 } else { $i += 1 }
 }
 
 if (-not $Source -or -not $Name) {
   Fail 'error: -Source and -Name are required. Run with -? for help.'
+}
+
+# ValidateSet only runs when PowerShell binds the parameter, so a --mode value
+# folded in from $Rest has to be checked here.
+if ($Mode -notin @('clone', 'link')) {
+  Fail "error: --mode must be 'clone' or 'link' (got '$Mode')"
 }
 
 $node = Get-Command node -ErrorAction SilentlyContinue
