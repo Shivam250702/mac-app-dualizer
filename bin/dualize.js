@@ -20,7 +20,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const registry = require('../src/registry');
-const { IS_WINDOWS, IS_MAC, dataDir } = require('../src/platform');
+const { IS_WINDOWS, IS_MAC, dataDir, rmrf } = require('../src/platform');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'clone-app.sh');
@@ -159,7 +159,7 @@ function remove() {
   const dest = entry ? entry.dest : IS_MAC ? `/Applications/${name}.app` : null;
 
   if (dest && fs.existsSync(dest)) {
-    fs.rmSync(dest, { recursive: true, force: true });
+    rmrf(dest);
     console.log(`Removed ${dest}`);
   } else if (entry && entry.mode === 'link') {
     console.log('Link clone: the original app is left untouched.');
@@ -170,18 +170,18 @@ function remove() {
   // Shortcuts and generated icons live outside the app folder on Windows.
   for (const lnk of (entry && entry.shortcuts) || []) {
     if (fs.existsSync(lnk)) {
-      fs.rmSync(lnk, { force: true });
+      rmrf(lnk);
       console.log(`Removed ${lnk}`);
     }
   }
   if (entry && entry.icon && entry.mode === 'link' && fs.existsSync(entry.icon)) {
-    fs.rmSync(entry.icon, { force: true });
+    rmrf(entry.icon);
   }
 
   const dd = dataDir(name, (entry && entry.platform) || process.platform);
   if (purge) {
     if (fs.existsSync(dd)) {
-      fs.rmSync(dd, { recursive: true, force: true });
+      rmrf(dd);
       console.log(`Removed data dir ${dd}`);
     }
   } else {
@@ -215,7 +215,7 @@ async function repair() {
     }
     console.log(`↻ Repairing ${e.name} ...`);
     // The data directory lives outside the app folder, so the login survives.
-    if (e.dest && fs.existsSync(e.dest)) fs.rmSync(e.dest, { recursive: true, force: true });
+    if (e.dest && fs.existsSync(e.dest)) rmrf(e.dest);
 
     if (IS_WINDOWS) {
       const { cloneWindowsApp } = require('../src/win/clone');

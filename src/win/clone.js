@@ -21,7 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { slug, tintFor, dataDir, validateName } = require('../platform');
+const { slug, tintFor, dataDir, validateName, rmrf } = require('../platform');
 const { inspectApp } = require('./appinfo');
 const { badgedIcoFromExe } = require('./peicon');
 const shortcut = require('./shortcut');
@@ -132,14 +132,14 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     // Keep the original unpacked payload around so anything the repack's glob
     // doesn't reproduce can be restored afterwards.
     if (fs.existsSync(unpackedDir)) fs.renameSync(unpackedDir, savedUnpacked);
-    fs.rmSync(asarPath, { force: true });
+    rmrf(asarPath);
 
     await asar.createPackageWithOptions(appDir, asarPath, { unpack: UNPACK_GLOB });
     uncache(asar, asarPath);
 
     if (fs.existsSync(savedUnpacked)) {
       const restored = mergeMissing(savedUnpacked, unpackedDir);
-      fs.rmSync(savedUnpacked, { recursive: true, force: true });
+      rmrf(savedUnpacked);
       if (restored) log(`      restored ${restored} unpacked file(s)`);
     }
     return { ok: true };
@@ -147,7 +147,7 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     // Put the original unpacked payload back if we failed mid-flight.
     try {
       if (fs.existsSync(savedUnpacked)) {
-        fs.rmSync(unpackedDir, { recursive: true, force: true });
+        rmrf(unpackedDir);
         fs.renameSync(savedUnpacked, unpackedDir);
       }
     } catch {
@@ -155,7 +155,7 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     }
     return { ok: false, error: e.message };
   } finally {
-    fs.rmSync(work, { recursive: true, force: true });
+    rmrf(work);
   }
 }
 
@@ -330,7 +330,7 @@ async function cloneWindowsApp(opts, log = () => {}) {
     log('[1/6] Copying application files...');
     const copied = copyTree(app.dir, destDir, log);
     if (!copied.ok) {
-      fs.rmSync(destDir, { recursive: true, force: true });
+      rmrf(destDir);
       return { ok: false, error: `copy failed: ${copied.error}` };
     }
 

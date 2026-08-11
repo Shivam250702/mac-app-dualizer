@@ -23,6 +23,7 @@ const {
 } = require('../src/win/appinfo');
 const { cloneWindowsApp, healthOf, SENTINEL } = require('../src/win/clone');
 const { sampleExe } = require('../tools/pe-fixture');
+const { rmrf } = require('../src/platform');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -55,7 +56,7 @@ async function makeInstall(root, name = 'Demo App', opts = {}) {
     );
     fs.writeFileSync(path.join(src, 'main.js'), "require('electron');\n// app code\n");
     await asar.createPackageWithOptions(src, path.join(dir, 'resources', 'app.asar'), {});
-    fs.rmSync(src, { recursive: true, force: true });
+    rmrf(src);
   }
   return dir;
 }
@@ -90,7 +91,7 @@ test('findMainExe ignores bundled updaters and uninstallers', async () => {
   const dir = await makeInstall(root, 'Demo App');
   fs.writeFileSync(path.join(dir, 'Uninstall Demo App.exe'), 'x');
   assert.strictEqual(path.basename(findMainExe(dir)), 'Demo App.exe');
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('inspectApp reads an install directory or the exe directly', async () => {
@@ -107,14 +108,14 @@ test('inspectApp reads an install directory or the exe directly', async () => {
     assert.strictEqual(info.hasAsarIntegrity, false);
     assert.strictEqual(path.basename(info.exe), 'Demo App.exe');
   }
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('inspectApp flags an app that enforces asar integrity', async () => {
   const root = tmpdir();
   const dir = await makeInstall(root, 'Locked App', { asarIntegrity: true });
   assert.strictEqual(inspectApp(dir).hasAsarIntegrity, true);
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('inspectApp reports non-Electron installs without an asar', async () => {
@@ -123,7 +124,7 @@ test('inspectApp reports non-Electron installs without an asar', async () => {
   const info = inspectApp(dir);
   assert.strictEqual(info.isElectron, false);
   assert.strictEqual(info.asarPath, null);
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('inspectApp declines things that are not apps', () => {
@@ -133,7 +134,7 @@ test('inspectApp declines things that are not apps', () => {
   fs.writeFileSync(path.join(root, 'readme.txt'), 'hi');
   assert.strictEqual(inspectApp(path.join(root, 'readme.txt')), null);
   assert.strictEqual(inspectApp(root), null, 'a directory with no exe');
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 // --- full clone --------------------------------------------------------------
@@ -179,7 +180,7 @@ test('cloneWindowsApp copies, renames, injects, and badges', async () => {
 
   if (IS_WINDOWS) {
     assert.ok(res.shortcuts.length >= 1, 'a Start Menu shortcut was created');
-    for (const lnk of res.shortcuts) fs.rmSync(lnk, { force: true }); // don't litter the runner
+    for (const lnk of res.shortcuts) rmrf(lnk); // don't litter the runner
   } else {
     // Off-Windows the shortcut step declines; that must not fail the clone.
     assert.strictEqual(res.shortcuts.length, 0);
@@ -189,7 +190,7 @@ test('cloneWindowsApp copies, renames, injects, and badges', async () => {
     );
   }
 
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('cloneWindowsApp skips injection when asar integrity is enforced', async () => {
@@ -208,7 +209,7 @@ test('cloneWindowsApp skips injection when asar integrity is enforced', async ()
     'the user is told isolation relies on the shortcut'
   );
   if (IS_WINDOWS) {
-    for (const lnk of res.shortcuts) fs.rmSync(lnk, { force: true });
+    for (const lnk of res.shortcuts) rmrf(lnk);
   } else {
     // Neither mechanism could be applied here, and that must be stated plainly
     // rather than reported as a working clone.
@@ -223,7 +224,7 @@ test('cloneWindowsApp skips injection when asar integrity is enforced', async ()
   const after = fs.readFileSync(path.join(dest, 'Locked Two', 'resources', 'app.asar'));
   assert.ok(before.equals(after), 'app.asar was not modified');
 
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('cloneWindowsApp in link mode copies nothing', async () => {
@@ -239,8 +240,8 @@ test('cloneWindowsApp in link mode copies nothing', async () => {
     assert.strictEqual(res.dest, null, 'nothing is copied in link mode');
     assert.strictEqual(res.exe, path.join(src, 'Demo App.exe'), 'points at the original');
     assert.strictEqual(res.source, res.exe, 'source and target are the same file');
-    if (res.icon) fs.rmSync(res.icon, { force: true });
-    for (const lnk of res.shortcuts) fs.rmSync(lnk, { force: true });
+    if (res.icon) rmrf(res.icon);
+    for (const lnk of res.shortcuts) rmrf(lnk);
   } else {
     // Link mode's only mechanism is the shortcut, which cannot exist here — so
     // it must report failure rather than claim an isolation it didn't deliver.
@@ -252,7 +253,7 @@ test('cloneWindowsApp in link mode copies nothing', async () => {
     fs.readFileSync(path.join(src, 'resources', 'app.asar')).equals(before),
     'the original app is untouched either way'
   );
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('cloneWindowsApp rejects a bad name before touching the disk', async () => {
@@ -265,7 +266,7 @@ test('cloneWindowsApp rejects a bad name before touching the disk', async () => 
     assert.strictEqual(res.ok, false, `"${bad}" should be rejected`);
   }
   assert.ok(!fs.existsSync(dest), 'nothing was written');
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('cloneWindowsApp refuses to overwrite an existing clone', async () => {
@@ -280,7 +281,7 @@ test('cloneWindowsApp refuses to overwrite an existing clone', async () => {
   );
   assert.strictEqual(res.ok, false);
   assert.match(res.error, /already exists/);
-  fs.rmSync(root, { recursive: true, force: true });
+  rmrf(root);
 });
 
 test('cloneWindowsApp reports a source that does not exist', async () => {

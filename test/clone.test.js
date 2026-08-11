@@ -22,7 +22,7 @@ const {
   healthOf,
   SENTINEL,
 } = require('../src/win/clone');
-const { validateName, dataDir, slug, tintFor } = require('../src/platform');
+const { validateName, dataDir, slug, tintFor, rmrf } = require('../src/platform');
 
 const ENTRY_BODY = "const { app } = require('electron');\napp.whenReady().then(() => {});\n";
 
@@ -65,7 +65,7 @@ test('the ES module isolation snippet is syntactically valid', () => {
   fs.writeFileSync(file, isolationSnippet('Slack Work', 'com.dualizer.slack-work', true));
   const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('the snippet escapes names that would otherwise break out of the string', () => {
@@ -126,7 +126,7 @@ test('injectIsolation rewrites the entry point and keeps the archive readable', 
   );
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(out, 'package.json'), 'utf8')).main, 'main.js');
 
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('injectIsolation honours an ES module entry point', async () => {
@@ -144,7 +144,7 @@ test('injectIsolation honours an ES module entry point', async () => {
   assert.ok(entry.startsWith('import '), 'ESM entry uses import, not require');
   assert.ok(logs.some((l) => l.includes('ES module')), 'the ESM path is reported');
 
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('injectIsolation restores unpacked files the repack would have dropped', async () => {
@@ -160,7 +160,7 @@ test('injectIsolation restores unpacked files the repack would have dropped', as
   );
   assert.ok(!fs.existsSync(`${asarPath}.unpacked.orig`), 'the scratch copy is cleaned up');
 
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('injectIsolation reports a missing entry point instead of throwing', async () => {
@@ -181,7 +181,7 @@ test('injectIsolation reports a missing entry point instead of throwing', async 
   assert.match(res.error, /entry point not found/);
   assert.ok(fs.existsSync(broken), 'the archive is left in place on failure');
 
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 // --- helpers -----------------------------------------------------------------
@@ -200,7 +200,7 @@ test('mergeMissing copies only files the destination lacks', () => {
   assert.strictEqual(fs.readFileSync(path.join(to, 'a.txt'), 'utf8'), 'to-a', 'existing file kept');
   assert.strictEqual(fs.readFileSync(path.join(to, 'nested', 'b.txt'), 'utf8'), 'from-b');
 
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('healthOf detects an app.asar replaced by an auto-update', () => {
@@ -221,9 +221,9 @@ test('healthOf detects an app.asar replaced by an auto-update', () => {
   fs.writeFileSync(asarPath, 'y'.repeat(500)); // stand-in for an auto-update
   assert.strictEqual(healthOf(entry), 'needs repair');
 
-  fs.rmSync(dest, { recursive: true, force: true });
+  rmrf(dest);
   assert.strictEqual(healthOf(entry), 'missing');
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('healthOf treats a link clone as healthy while its source exists', () => {
@@ -232,13 +232,13 @@ test('healthOf treats a link clone as healthy while its source exists', () => {
   fs.writeFileSync(exe, 'MZ');
   assert.strictEqual(healthOf({ mode: 'link', source: exe }), 'ok');
   assert.strictEqual(healthOf({ mode: 'link', source: path.join(dir, 'gone.exe') }), 'missing');
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 test('healthOf flags a clone with no sentinel as needing repair', () => {
   const dir = tmpdir();
   assert.strictEqual(healthOf({ mode: 'clone', dest: dir }), 'needs repair');
-  fs.rmSync(dir, { recursive: true, force: true });
+  rmrf(dir);
 });
 
 // --- naming ------------------------------------------------------------------

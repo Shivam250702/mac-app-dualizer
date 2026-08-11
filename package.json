@@ -31,10 +31,6 @@
   "engines": {
     "node": ">=18"
   },
-  "os": [
-    "darwin",
-    "win32"
-  ],
   "homepage": "https://github.com/Shivam250702/mac-app-dualizer#readme",
   "repository": {
     "type": "git",

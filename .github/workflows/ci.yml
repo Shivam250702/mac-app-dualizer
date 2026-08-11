@@ -88,8 +88,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $out = & .\clone-app.ps1 -Name "No Source" 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0) { Write-Error 'expected a non-zero exit'; exit 1 }
+          if ($LASTEXITCODE -eq 0) { Write-Host '::error::expected a non-zero exit'; exit 1 }
           Write-Host "declined as expected: $out"
+          # The Actions pwsh wrapper exits with $LASTEXITCODE, which is the 1 we
+          # just asserted on — so reset it or the step inherits the failure.
+          exit 0
 
       # End-to-end against a synthetic Electron install, on a real Windows box:
       # this is the only place shortcut creation and the PowerShell wrapper are

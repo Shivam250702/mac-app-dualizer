@@ -5,6 +5,7 @@
 // Kept dependency-free and side-effect-free so it can be required from the CLI,
 // the Electron main process, and the test suite alike.
 //
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -90,4 +91,26 @@ function validateName(name) {
   return null;
 }
 
-module.exports = { IS_WINDOWS, IS_MAC, PALETTE, slug, tintFor, cksum, dataDir, validateName };
+/**
+ * Delete a file or directory tree.
+ *
+ * Windows routinely fails a recursive delete with EBUSY/ENOTEMPTY/EPERM when a
+ * virus scanner or a just-closed handle still holds a file open, so retries are
+ * not optional there — an un-retried rmSync will intermittently blow up mid
+ * clone, repair, or cleanup. Node only retries when asked.
+ */
+function rmrf(target) {
+  fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
+module.exports = {
+  IS_WINDOWS,
+  IS_MAC,
+  PALETTE,
+  slug,
+  tintFor,
+  cksum,
+  dataDir,
+  validateName,
+  rmrf,
+};
