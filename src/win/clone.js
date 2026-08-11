@@ -112,17 +112,27 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
 
     let entry = 'index.js';
     let esm = false;
+    let pkgError = null;
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
       entry = pkg.main || 'index.js';
       esm = pkg.type === 'module' || entry.endsWith('.mjs');
-    } catch {
-      // No package.json: fall back to index.js and hope for the best.
+    } catch (e) {
+      // Not fatal on its own — some apps really do rely on the index.js default
+      // — but if the entry then turns out to be missing, this is why.
+      pkgError = e.message;
     }
 
     const entryFile = path.join(appDir, entry);
     if (!fs.existsSync(entryFile)) {
-      return { ok: false, error: `entry point not found inside app.asar (${entry})` };
+      const listing = safeList(appDir);
+      return {
+        ok: false,
+        error:
+          `entry point not found inside app.asar (${entry})` +
+          (pkgError ? `; could not read package.json: ${pkgError}` : '') +
+          `; extracted: ${listing}`,
+      };
     }
     if (esm) log(`      entry point is an ES module (${entry})`);
 
@@ -156,6 +166,17 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     return { ok: false, error: e.message };
   } finally {
     rmrf(work);
+  }
+}
+
+/** A short directory listing, for putting real detail in an error message. */
+function safeList(dir) {
+  try {
+    const names = fs.readdirSync(dir);
+    if (names.length === 0) return '(empty)';
+    return names.slice(0, 12).join(', ') + (names.length > 12 ? ', …' : '');
+  } catch (e) {
+    return `(unreadable: ${e.message})`;
   }
 }
 
