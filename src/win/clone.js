@@ -182,7 +182,16 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     }
     return { ok: false, error: e.message };
   } finally {
-    rmrf(work);
+    // Release the staged archive before deleting: reading it leaves a handle in
+    // asar's cache, and Windows will not remove a directory that still has one
+    // open. Even then the delete is best-effort — a leftover scratch directory
+    // in the OS temp area must never turn a completed injection into a failure.
+    uncache(asar, path.join(work, 'app.asar'));
+    try {
+      rmrf(work);
+    } catch {
+      /* the OS reclaims its own temp directory */
+    }
   }
 }
 
