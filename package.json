@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test",
     "clone": "bash clone-app.sh",
     "clone:win": "powershell -ExecutionPolicy Bypass -File clone-app.ps1"
   },

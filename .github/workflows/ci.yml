@@ -26,7 +26,7 @@ jobs:
 
       - name: JS syntax check
         run: |
-          for f in bin/dualize.js src/*.js src/win/*.js src/renderer/renderer.js src/renderer/../preload.js; do
+          for f in bin/dualize.js src/*.js src/win/*.js src/renderer/renderer.js tools/*.js; do
             echo "checking $f"
             node --check "$f"
           done
@@ -87,9 +87,84 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $out = & .\clone-app.ps1 --name "No Source" 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0) { Write-Error "expected a non-zero exit"; exit 1 }
+          $out = & .\clone-app.ps1 -Name "No Source" 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) { Write-Error 'expected a non-zero exit'; exit 1 }
           Write-Host "declined as expected: $out"
 
-      - name: dualize help works on Windows
-        run: node bin/dualize.js help
+      # End-to-end against a synthetic Electron install, on a real Windows box:
+      # this is the only place shortcut creation and the PowerShell wrapper are
+      # exercised for real.
+      - name: Clone a synthetic app (native -Parameter form)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = node tools/make-fake-app.js "$env:RUNNER_TEMP\FakeApp" "Fake App"
+          Write-Host "built $app"
+          & .\clone-app.ps1 -Source $app -Name "Fake Two" -DestDir "$env:RUNNER_TEMP\Programs" -Desktop
+          if ($LASTEXITCODE -ne 0) { Write-Error 'clone failed'; exit 1 }
+
+          $exe = "$env:RUNNER_TEMP\Programs\Fake Two\Fake Two.exe"
+          if (-not (Test-Path $exe)) { Write-Error "missing cloned exe: $exe"; exit 1 }
+          if (-not (Test-Path "$env:RUNNER_TEMP\Programs\Fake Two\Fake Two.ico")) {
+            Write-Error 'missing badged icon'; exit 1
+          }
+          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Fake Two.lnk"
+          if (-not (Test-Path $lnk)) { Write-Error "missing Start Menu shortcut: $lnk"; exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\Desktop\Fake Two.lnk")) {
+            Write-Error 'missing Desktop shortcut'; exit 1
+          }
+
+          # The shortcut must actually carry the isolation flag and the icon.
+          $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+          Write-Host "target : $($sc.TargetPath)"
+          Write-Host "args   : $($sc.Arguments)"
+          Write-Host "icon   : $($sc.IconLocation)"
+          if ($sc.TargetPath -ne $exe) { Write-Error 'shortcut points at the wrong exe'; exit 1 }
+          if ($sc.Arguments -notlike '*--user-data-dir=*Fake Two*') {
+            Write-Error 'shortcut is missing --user-data-dir'; exit 1
+          }
+          if ($sc.IconLocation -notlike '*Fake Two.ico*') { Write-Error 'shortcut icon not set'; exit 1 }
+
+          # And the injected snippet must be inside the repacked archive.
+          $extracted = "$env:RUNNER_TEMP\extracted"
+          npx --yes @electron/asar extract "$env:RUNNER_TEMP\Programs\Fake Two\resources\app.asar" $extracted
+          $entry = Get-Content "$extracted\main.js" -Raw
+          if ($entry -notlike "*Fake Two*") { Write-Error 'isolation snippet missing'; exit 1 }
+          if ($entry -notlike '*com.dualizer.fake-two*') { Write-Error 'AppUserModelID missing'; exit 1 }
+          Write-Host 'clone verified'
+
+      - name: Clone a synthetic app (GNU --flag form, link mode)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\clone-app.ps1 --source "$env:RUNNER_TEMP\FakeApp\Fake App.exe" --name "Fake Link" --mode link
+          if ($LASTEXITCODE -ne 0) { Write-Error 'link-mode clone failed'; exit 1 }
+
+          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Fake Link.lnk"
+          if (-not (Test-Path $lnk)) { Write-Error 'missing link-mode shortcut'; exit 1 }
+          $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+          if ($sc.TargetPath -ne "$env:RUNNER_TEMP\FakeApp\Fake App.exe") {
+            Write-Error 'link shortcut should point at the original app'; exit 1
+          }
+          Write-Host 'link mode verified'
+
+      - name: dualize list / remove round-trip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node bin/dualize.js help
+          $listed = node bin/dualize.js list | Out-String
+          Write-Host $listed
+          if ($listed -notlike '*Fake Two*') { Write-Error 'clone was not registered'; exit 1 }
+          if ($listed -notlike '*Fake Link*') { Write-Error 'link clone was not registered'; exit 1 }
+          if ($listed -like '*needs repair*') { Write-Error 'a fresh clone should be healthy'; exit 1 }
+
+          node bin/dualize.js remove "Fake Two" --purge
+          node bin/dualize.js remove "Fake Link" --purge
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Fake Two.lnk") {
+            Write-Error 'remove left the shortcut behind'; exit 1
+          }
+          if (Test-Path "$env:RUNNER_TEMP\Programs\Fake Two") {
+            Write-Error 'remove left the clone behind'; exit 1
+          }
+          Write-Host 'remove verified'

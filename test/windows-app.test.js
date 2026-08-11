@@ -22,7 +22,7 @@ const {
   detectAsarIntegrity,
 } = require('../src/win/appinfo');
 const { cloneWindowsApp, healthOf, SENTINEL } = require('../src/win/clone');
-const { sampleExe } = require('./helpers/pe-fixture');
+const { sampleExe } = require('../tools/pe-fixture');
 
 const IS_WINDOWS = process.platform === 'win32';
 

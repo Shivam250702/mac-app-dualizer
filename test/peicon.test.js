@@ -28,7 +28,7 @@ const {
   sampleExe,
   RT_ICON,
   RT_GROUP_ICON,
-} = require('./helpers/pe-fixture');
+} = require('../tools/pe-fixture');
 
 // --- tests -------------------------------------------------------------------
 

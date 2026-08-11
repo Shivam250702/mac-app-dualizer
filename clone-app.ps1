@@ -52,16 +52,20 @@
 .NOTES
   Requires Node.js 18+. Run `npm install` in the repo first.
 #>
+# PowerShell matches parameter names case-insensitively, so `-source` already
+# binds to $Source — declaring it as an alias too is an error. Only genuinely
+# different spellings are aliased here; the GNU-style `--flag` forms are folded
+# in from $Rest below.
 [CmdletBinding()]
 param(
-  [Alias('source')][string]$Source,
-  [Alias('name')][string]$Name,
-  [Alias('dest-dir', 'destdir')][string]$DestDir,
-  [Alias('mode')][ValidateSet('clone', 'link')][string]$Mode = 'clone',
-  [Alias('no-isolate', 'noisolate')][switch]$NoIsolate,
-  [Alias('desktop')][switch]$Desktop,
-  [Alias('tint')][string]$Tint,
-  [Alias('no-tint', 'notint')][switch]$NoTint,
+  [string]$Source,
+  [string]$Name,
+  [Alias('dest-dir')][string]$DestDir,
+  [ValidateSet('clone', 'link')][string]$Mode = 'clone',
+  [Alias('no-isolate')][switch]$NoIsolate,
+  [switch]$Desktop,
+  [string]$Tint,
+  [Alias('no-tint')][switch]$NoTint,
   # Anything not matched above, so GNU-style `--source X` also works.
   [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
 )
