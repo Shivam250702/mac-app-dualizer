@@ -26,10 +26,70 @@ jobs:
 
       - name: JS syntax check
         run: |
-          for f in bin/dualize.js src/*.js; do
+          for f in bin/dualize.js src/*.js src/win/*.js src/renderer/renderer.js src/renderer/../preload.js; do
             echo "checking $f"
             node --check "$f"
           done
 
       - name: Validate package.json
         run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+
+  # The Windows code paths are plain Node, so the suite is meaningful on every
+  # platform — but only the Windows runner exercises real shortcut creation.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse clone-app.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\clone-app.ps1).Path, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Message)" }
+            exit 1
+          }
+          Write-Host 'clone-app.ps1 parses cleanly'
+
+      - name: Check the help output renders
+        shell: pwsh
+        run: Get-Help .\clone-app.ps1 -Full | Out-String -Width 100
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Wrapper rejects a missing source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = & .\clone-app.ps1 --name "No Source" 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) { Write-Error "expected a non-zero exit"; exit 1 }
+          Write-Host "declined as expected: $out"
+
+      - name: dualize help works on Windows
+        run: node bin/dualize.js help
