@@ -18,6 +18,7 @@ const asar = require('@electron/asar');
 const {
   isolationSnippet,
   injectIsolation,
+  verifyArchive,
   mergeMissing,
   healthOf,
   SENTINEL,
@@ -202,6 +203,47 @@ test('injectIsolation reports a missing entry point instead of throwing', async 
   assert.match(res.error, /entry point not found/);
   assert.ok(fs.existsSync(broken), 'the archive is left in place on failure');
 
+  cleanup(dir);
+});
+
+test('verifyArchive rejects an unreadable or incomplete archive', async () => {
+  const dir = tmpdir();
+  const asarPath = await makeAsar(dir);
+  assert.strictEqual(await verifyArchive(asar, asarPath, 'main.js'), true);
+  assert.strictEqual(
+    await verifyArchive(asar, asarPath, 'not-in-there.js'),
+    false,
+    'an archive missing the entry point is not acceptable'
+  );
+
+  const garbage = path.join(dir, 'truncated.asar');
+  fs.writeFileSync(garbage, fs.readFileSync(asarPath).subarray(0, 12));
+  assert.strictEqual(await verifyArchive(asar, garbage, 'main.js'), false);
+
+  assert.strictEqual(await verifyArchive(asar, path.join(dir, 'missing.asar'), 'main.js'), false);
+  cleanup(dir);
+});
+
+test('a failed repack leaves the original app.asar intact', async () => {
+  const dir = tmpdir();
+  const asarPath = await makeAsar(dir);
+  const before = fs.readFileSync(asarPath);
+
+  // Force the pack step to fail after the entry point has been rewritten.
+  const original = asar.createPackageWithOptions;
+  asar.createPackageWithOptions = async () => {
+    throw new Error('simulated packer failure');
+  };
+  try {
+    const res = await injectIsolation(asarPath, 'Clone', 'com.dualizer.clone', () => {});
+    assert.strictEqual(res.ok, false);
+    assert.match(res.error, /simulated packer failure/);
+  } finally {
+    asar.createPackageWithOptions = original;
+  }
+
+  assert.ok(fs.existsSync(asarPath), 'the archive still exists');
+  assert.ok(fs.readFileSync(asarPath).equals(before), 'and is byte-for-byte the original');
   cleanup(dir);
 });
 

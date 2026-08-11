@@ -139,14 +139,31 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     const original = fs.readFileSync(entryFile, 'utf8');
     fs.writeFileSync(entryFile, isolationSnippet(cloneName, aumid, esm) + original);
 
-    // Keep the original unpacked payload around so anything the repack's glob
-    // doesn't reproduce can be restored afterwards.
+    // Build the replacement off to the side and prove it is readable before
+    // touching the real one. A half-written app.asar is not a degraded clone,
+    // it is an app that cannot start at all, so the original stays put until
+    // there is a verified archive to swap in.
+    const stagedAsar = path.join(work, 'app.asar');
+    await asar.createPackageWithOptions(appDir, stagedAsar, { unpack: UNPACK_GLOB });
+
+    if (!(await verifyArchive(asar, stagedAsar, entry))) {
+      return {
+        ok: false,
+        error: 'the repacked app.asar could not be read back; the original was left untouched',
+      };
+    }
+
+    // Swap in. The original unpacked payload is kept aside so anything the
+    // repack's glob does not reproduce can be restored afterwards.
     if (fs.existsSync(unpackedDir)) fs.renameSync(unpackedDir, savedUnpacked);
     rmrf(asarPath);
-
-    await asar.createPackageWithOptions(appDir, asarPath, { unpack: UNPACK_GLOB });
+    fs.copyFileSync(stagedAsar, asarPath); // copy, not rename: temp may be another volume
     uncache(asar, asarPath);
 
+    const stagedUnpacked = `${stagedAsar}.unpacked`;
+    if (fs.existsSync(stagedUnpacked)) {
+      fs.cpSync(stagedUnpacked, unpackedDir, { recursive: true });
+    }
     if (fs.existsSync(savedUnpacked)) {
       const restored = mergeMissing(savedUnpacked, unpackedDir);
       rmrf(savedUnpacked);
@@ -167,6 +184,34 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
   } finally {
     rmrf(work);
   }
+}
+
+/**
+ * Confirm a freshly written archive can be read back and still contains the
+ * entry point.
+ *
+ * Windows has been observed to hand back a not-yet-complete file immediately
+ * after the packer resolves, so this retries briefly before giving up rather
+ * than treating the first read as final.
+ */
+async function verifyArchive(asar, archivePath, entry) {
+  const want = normalizeAsarPath(entry);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    uncache(asar, archivePath);
+    try {
+      const listed = asar.listPackage(archivePath).map(normalizeAsarPath);
+      if (listed.includes(want)) return true;
+    } catch {
+      // Not readable yet — fall through to the retry.
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+}
+
+/** listPackage yields paths like "/main.js" or "\main.js" depending on host. */
+function normalizeAsarPath(p) {
+  return String(p).replace(/\\/g, '/').replace(/^\.?\//, '');
 }
 
 /** A short directory listing, for putting real detail in an error message. */
@@ -495,6 +540,7 @@ module.exports = {
   healthOf,
   isolationSnippet,
   injectIsolation,
+  verifyArchive,
   mergeMissing,
   defaultDestDir,
   iconStoreDir,
