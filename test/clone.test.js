@@ -65,6 +65,11 @@ async function makeAsar(dir, { type, main = 'main.js', unpacked = {} } = {}) {
 
   const asarPath = path.join(dir, 'app.asar');
   await asar.createPackageWithOptions(appDir, asarPath, { unpack: '{*.node,*.dll}' });
+  // The packer resolves before Windows has necessarily flushed the file, and
+  // reading too early yields a zero-filled archive. Wait for it to settle.
+  if (!(await verifyArchive(asar, asarPath, main))) {
+    throw new Error(`fixture archive never became readable: ${asarPath}`);
+  }
 
   for (const [rel, body] of Object.entries(unpacked)) {
     const p = path.join(`${asarPath}.unpacked`, rel);

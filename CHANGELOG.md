@@ -40,6 +40,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 - `@electron/asar` caches an archive's header by path; the Windows engine now
   invalidates that cache after repacking, so a long-lived process (the GUI) can't
   read a rewritten archive at stale offsets.
+- `app.asar` is repacked to a scratch file, verified readable, and only then
+  swapped in. Previously the original was deleted before its replacement was
+  written, so a failure in between left the clone with no archive at all — and
+  because injection failure is only a warning, that surfaced as a "successful"
+  clone whose app could not start.
+- Deletes retry, and cleanup of the scratch directory can no longer fail an
+  injection that already succeeded. Windows refuses to remove a directory while
+  any handle inside it is open, which made this fail intermittently.
+- A clone that ends up with neither injection nor a shortcut is now reported
+  instead of being presented as isolated when it would silently share the
+  original app's data.
+- `dualize remove` explains that a clone must be quit before it can be deleted,
+  rather than surfacing a raw filesystem error.
 
 ### Added (earlier, macOS)
 - **Distinct clone icons** — clones get an auto-colored badge (deterministic from

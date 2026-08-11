@@ -21,7 +21,7 @@ const {
   readVersionStrings,
   detectAsarIntegrity,
 } = require('../src/win/appinfo');
-const { cloneWindowsApp, healthOf, SENTINEL } = require('../src/win/clone');
+const { cloneWindowsApp, healthOf, verifyArchive, SENTINEL } = require('../src/win/clone');
 const { sampleExe } = require('../tools/pe-fixture');
 const { rmrf } = require('../src/platform');
 
@@ -76,7 +76,11 @@ async function makeInstall(root, name = 'Demo App', opts = {}) {
       JSON.stringify({ name: 'demo', main: 'main.js' })
     );
     fs.writeFileSync(path.join(src, 'main.js'), "require('electron');\n// app code\n");
-    await asar.createPackageWithOptions(src, path.join(dir, 'resources', 'app.asar'), {});
+    const asarPath = path.join(dir, 'resources', 'app.asar');
+    await asar.createPackageWithOptions(src, asarPath, {});
+    if (!(await verifyArchive(asar, asarPath, 'main.js'))) {
+      throw new Error(`fixture archive never became readable: ${asarPath}`);
+    }
     rmrf(src);
   }
   return dir;

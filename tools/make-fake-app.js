@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const asar = require('@electron/asar');
 const { sampleExe } = require('./pe-fixture');
+const { verifyArchive } = require('../src/win/clone');
 
 async function main() {
   const outDir = process.argv[2];
@@ -50,7 +51,11 @@ async function main() {
     path.join(src, 'main.js'),
     "'use strict';\n// pretend Electron entry point\nmodule.exports = {};\n"
   );
-  await asar.createPackageWithOptions(src, path.join(dir, 'resources', 'app.asar'), {});
+  const asarPath = path.join(dir, 'resources', 'app.asar');
+  await asar.createPackageWithOptions(src, asarPath, {});
+  if (!(await verifyArchive(asar, asarPath, 'main.js'))) {
+    throw new Error(`generated app.asar never became readable: ${asarPath}`);
+  }
   fs.rmSync(src, { recursive: true, force: true });
 
   console.log(path.join(dir, `${appName}.exe`));
