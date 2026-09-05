@@ -10,7 +10,8 @@ Run **two independent instances** of a macOS app at the same time — each with 
 own data directory and its own login. Great for using two accounts of the same
 app (two Claude, Slack, Notion, or Discord logins) side by side.
 
-- **CLI** — `clone-app.sh`, a single self-contained script.
+- **CLI** — `clone-app.sh`, a shell script plus a few small dependency-free Node
+  helpers in `src/` (no `npm install` needed).
 - **GUI** — a small Electron app: drag in an app, name the clone, click **Clone**.
 
 Works best with **Electron apps** (Claude, Slack, Notion, VS Code, Discord,
@@ -64,6 +65,10 @@ This tool does all four.
 - **Node.js** (18+) — needed for the data-isolation step on Electron apps
   (provides [`@electron/asar`](https://github.com/electron/asar)) and to run the GUI
 
+The CLI needs **no `npm install`**: it fetches `@electron/asar` on demand through
+`npx`, and everything else it does is Node built-ins only. `npm install` is only
+required for the GUI.
+
 ---
 
 ## Quick start — CLI
@@ -101,7 +106,7 @@ Every clone is recorded in `~/.config/mac-app-dualizer/clones.json`, so you can
 manage them with the `dualize` command:
 
 ```bash
-node bin/dualize.js list                 # show clones + health (ok / needs repair / missing)
+node bin/dualize.js list                 # show clones + health (signature + asar hash)
 node bin/dualize.js repair "Slack Work"  # re-apply after an app auto-update (keeps the login)
 node bin/dualize.js repair --all         # repair every unhealthy clone
 node bin/dualize.js remove "Slack Work"  # delete the clone (add --purge to also delete its data)
@@ -170,16 +175,22 @@ For each clone, the script:
 3. *(Electron)* **Renames the helper apps** in `Contents/Frameworks`
    (`<App> Helper*.app` → `<Clone> Helper*.app`) and their executables, because
    Electron locates helpers by the main app's name.
-4. *(Electron)* **Injects an isolated data directory** by prepending a tiny
-   snippet to the app's main script inside `app.asar`:
+4. *(Electron)* **Injects an isolated data directory** by inserting a tiny
+   snippet at the top of the app's main script inside `app.asar` (right after its
+   `"use strict"` directive, so the bundle keeps running in strict mode):
    ```js
    require('electron').app.setPath(
      'userData',
      require('path').join(app.getPath('appData'), '<Clone Name>')
    );
    ```
-   It then repacks `app.asar` and, if present, **recomputes the
-   `ElectronAsarIntegrity` hash** in `Info.plist`.
+   It then repacks `app.asar` **keeping exactly the original set of files in
+   `app.asar.unpacked`, with their original permissions** (native modules and
+   helper binaries can't run from inside an archive, and they must stay
+   executable) and **recomputes the `ElectronAsarIntegrity` hash** in
+   `Info.plist`. Apps built with Electron's asar-integrity fuse — Claude is one —
+   refuse to start if that hash is stale, so the script verifies it again after
+   signing and fails instead of producing a clone that would crash.
    *`productName` is deliberately left unchanged, so the app's user-agent and any
    server-side "is this the desktop app?" detection keep working — important for
    web-based login flows.*
@@ -215,6 +226,33 @@ default handler for one scheme, so:
   apps.
 - **Not affiliated** with Anthropic or any app you clone. Use responsibly and
   within each app's license and Terms of Service.
+
+---
+
+## Troubleshooting
+
+**The clone crashes the instant it opens.** The crash report says
+`EXC_BREAKPOINT (SIGTRAP)` in `Electron Framework` a fraction of a second after
+launch (Console shows `Integrity check failed for asar archive`). The app checks
+its `app.asar` against the `ElectronAsarIntegrity` hash in `Info.plist`, and the
+clone's hash is stale. Versions of this tool before September 2026 could leave it
+stale when the CLI was run from a bare `git clone` — the hash step depended on
+`@electron/asar` being `require()`-able and silently skipped when it wasn't
+([#1](https://github.com/vishalmeena2211/mac-app-dualizer/issues/1)). Pull the
+latest version, then rebuild the clone; its data directory (your login) is kept:
+
+```bash
+node bin/dualize.js list                 # "needs repair (asar integrity hash)"
+node bin/dualize.js repair "Claude 2"    # re-applies the patch on top of the current app
+```
+
+If the clone predates the registry (`dualize list` doesn't know it), delete the
+`.app` and run `clone-app.sh` again with the same name.
+
+**"could not inject the data-isolation snippet".** The app's main script isn't a
+CommonJS file the tool knows how to patch (e.g. an ES-module entry). Clone with
+`--no-isolate` to get a separately-identified copy that still shares the
+original's data, and please open an issue naming the app.
 
 ---
 

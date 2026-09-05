@@ -24,8 +24,11 @@ critical one.
 
 ## Before opening a PR
 
-- Shell: `bash -n clone-app.sh` must pass.
-- JS: `node --check` each file under `src/` and `bin/`.
+- Shell: `bash -n clone-app.sh` and `shellcheck --severity=warning clone-app.sh`
+  must pass (that is what CI runs). Keep it Bash 3.2 compatible — that is the
+  `bash` macOS ships.
+- JS: `node --check` each file under `src/` and `bin/`. Keep `src/asar-tools.js`
+  free of third-party dependencies; it must work from a bare `git clone`.
 - Describe **what app you tested against** and your macOS + chip
   (Apple Silicon / Intel) in the PR.
 - Keep changes focused; one topic per PR.

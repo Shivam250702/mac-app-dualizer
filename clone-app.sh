@@ -26,6 +26,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLS="$SCRIPT_DIR/src/asar-tools.js"   # dependency-free asar/Info.plist helpers (Node built-ins only)
 
 SOURCE=""
 CLONE_NAME=""
@@ -34,8 +35,9 @@ ISOLATE=1
 STRIP_SCHEMES=0
 TINT=""
 DO_TINT=1
+WORK=""
 
-usage() { sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; }   # the comment block above
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -70,7 +72,8 @@ DEST="$DEST_DIR/$CLONE_NAME.app"
 SLUG="$(printf '%s' "$CLONE_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')"
 NEW_ID="${ORIG_ID}.${SLUG}"
 
-NODE_OK=1; command -v npx >/dev/null 2>&1 || NODE_OK=0
+NODE_OK=1
+if ! command -v node >/dev/null 2>&1 || ! command -v npx >/dev/null 2>&1; then NODE_OK=0; fi
 
 # Pick a deterministic badge color from the clone name if none was given.
 if [[ "$DO_TINT" -eq 1 && -z "$TINT" ]]; then
@@ -79,9 +82,14 @@ if [[ "$DO_TINT" -eq 1 && -z "$TINT" ]]; then
   TINT="#${PALETTE[$(( H % ${#PALETTE[@]} ))]}"
 fi
 
-# Clean up a half-written clone if we fail partway through.
-cleanup_fail() { [[ -e "$DEST" ]] && rm -rf "$DEST"; }
+# Clean up a half-written clone (and any scratch dir) if we fail partway through.
+cleanup_fail() {
+  [[ -n "$WORK" && -d "$WORK" ]] && rm -rf "$WORK"
+  [[ -e "$DEST" ]] && rm -rf "$DEST"
+  return 0
+}
 trap 'cleanup_fail' ERR
+die() { echo "error: $*" >&2; cleanup_fail; exit 1; }
 
 echo "Cloning '$ORIG_NAME'  ->  '$CLONE_NAME'"
 echo "  source : $SOURCE"
@@ -138,28 +146,48 @@ if [[ -f "$ASAR" ]]; then
       echo "      ! Node/npx not found; skipping data isolation."
     else
       echo "[5/8] Injecting isolated data directory..."
+      [[ -f "$TOOLS" ]] || die "helper not found: $TOOLS (run clone-app.sh from a full checkout of mac-app-dualizer)"
       WORK="$(mktemp -d)"
+
+      # Files the app keeps *outside* the archive (app.asar.unpacked): native modules and
+      # helper binaries can't be loaded or spawned from inside an asar, so the repacked
+      # clone must reproduce exactly the same layout as the original.
+      ORIG_UNPACK="$(node "$TOOLS" unpack-glob "$ASAR" "$WORK/app")"
+      ORIG_UNPACK_DIR="$(node "$TOOLS" unpack-dir-glob "$ASAR")"
+
       npx --yes @electron/asar extract "$ASAR" "$WORK/app" >/dev/null
-      ENTRY="$(node -e 'const p=require(process.argv[1]+"/package.json");process.stdout.write(p.main||"index.js")' "$WORK/app")"
-      ENTRY_FILE="$WORK/app/$ENTRY"
-      if [[ -f "$ENTRY_FILE" ]]; then
-        SNIPPET=";(function(){try{var e=require('electron'),p=require('path');var a=e.app||e;var d='$CLONE_NAME';a.setPath('userData',p.join(a.getPath('appData'),d));try{a.setAppLogsPath(p.join(a.getPath('appData'),d,'Logs'));}catch(_){}}catch(_){}})();"
-        printf '%s\n' "$SNIPPET" | cat - "$ENTRY_FILE" > "$ENTRY_FILE.tmp" && mv "$ENTRY_FILE.tmp" "$ENTRY_FILE"
-        rm -f "$ASAR"; rm -rf "$DEST/Contents/Resources/app.asar.unpacked"
-        npx --yes @electron/asar pack "$WORK/app" "$ASAR" --unpack "{*.node,*.dylib,spawn-helper}" >/dev/null
-        if "$PB" -c "Print :ElectronAsarIntegrity:Resources/app.asar:hash" "$DEST_PLIST" >/dev/null 2>&1; then
-          HASH="$(npx --yes -p @electron/asar node -e 'const a=require("@electron/asar"),c=require("crypto");const r=a.getRawHeader(process.argv[1]);process.stdout.write(c.createHash("sha256").update(r.headerString).digest("hex"))' "$ASAR" 2>/dev/null || true)"
-          if [[ -n "$HASH" ]]; then
-            "$PB" -c "Set :ElectronAsarIntegrity:Resources/app.asar:hash $HASH" "$DEST_PLIST"
-            echo "      asar integrity hash updated"
-          else
-            echo "      ! could not recompute integrity hash; app may fail to launch"
-          fi
-        fi
+      node "$TOOLS" inject "$WORK/app" "$CLONE_NAME" | sed 's/^/      /' \
+        || die "could not inject the data-isolation snippet (see above); re-run with --no-isolate to clone without a separate data directory"
+
+      rm -f "$ASAR"; rm -rf "$DEST/Contents/Resources/app.asar.unpacked"
+      if [[ -n "$ORIG_UNPACK" ]]; then
+        PACK_ARGS=(--unpack "$ORIG_UNPACK")
       else
-        echo "      ! could not locate entry file ($ENTRY); skipping isolation"
+        PACK_ARGS=(--unpack "{*.node,*.dylib,spawn-helper}")   # nothing was unpacked; keep natives loadable anyway
       fi
-      rm -rf "$WORK"
+      [[ -n "$ORIG_UNPACK_DIR" ]] && PACK_ARGS+=(--unpack-dir "$ORIG_UNPACK_DIR")
+      npx --yes @electron/asar pack "$WORK/app" "$ASAR" "${PACK_ARGS[@]}" >/dev/null
+      if [[ -n "$ORIG_UNPACK" ]]; then
+        node "$TOOLS" verify-unpacked "$SOURCE/Contents/Resources/app.asar" "$ASAR" | sed 's/^/      /' \
+          || die "the repacked app.asar does not keep the original app.asar.unpacked layout"
+      fi
+      # asar extract/pack write unpacked files as 0644, so spawn-helper, bundled MCP
+      # servers and native addons would lose their executable bit: restore the modes.
+      if [[ -d "$SOURCE/Contents/Resources/app.asar.unpacked" ]]; then
+        node "$TOOLS" sync-unpacked-modes "$SOURCE/Contents/Resources/app.asar.unpacked" "$DEST/Contents/Resources/app.asar.unpacked" | sed 's/^/      /' \
+          || die "could not restore permissions on app.asar.unpacked files"
+      fi
+
+      # Apps built with Electron's EnableEmbeddedAsarIntegrityValidation fuse (Claude is
+      # one) compare app.asar against the hash stored in Info.plist at startup and abort
+      # with EXC_BREAKPOINT on a mismatch, so the hash MUST be recomputed for the new
+      # archive. asar-tools does this with Node built-ins only, so it works from a bare
+      # git clone (no `npm install`) — the old `npx -p @electron/asar node -e 'require(…)'`
+      # approach silently failed there and produced clones that crashed on launch (#1).
+      node "$TOOLS" update-integrity "$DEST" | sed 's/^/      /' \
+        || die "could not update the ElectronAsarIntegrity hash; the clone would crash on launch"
+
+      rm -rf "$WORK"; WORK=""
     fi
   else
     echo "[5/8] Data isolation skipped (--no-isolate)."
@@ -196,8 +224,14 @@ if [[ "$DO_TINT" -eq 1 ]]; then
 fi
 
 echo "[7/8] Re-signing (ad-hoc)..."
-codesign --force --deep --sign - "$DEST" 2>/dev/null
-codesign --verify "$DEST" && echo "      signature OK"
+codesign --force --deep --sign - "$DEST" 2>/dev/null || die "codesign failed"
+codesign --verify "$DEST" || die "code signature verification failed"
+echo "      signature OK"
+if [[ -f "$ASAR" && "$NODE_OK" -eq 1 && -f "$TOOLS" ]]; then
+  # Final self-check: a stale ElectronAsarIntegrity hash means an instant crash on launch.
+  node "$TOOLS" check-integrity "$DEST" | sed 's/^/      /' \
+    || die "asar integrity check failed; the clone would crash on launch"
+fi
 
 echo "[8/8] Registering with Launch Services..."
 "$LSREGISTER" -f "$DEST" >/dev/null 2>&1 || true
