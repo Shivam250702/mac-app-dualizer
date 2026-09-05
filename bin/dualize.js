@@ -20,6 +20,7 @@ const os = require('node:os');
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'clone-app.sh');
 const REGISTRY = path.join(ROOT, 'src', 'registry.js');
+const asarTools = require(path.join(ROOT, 'src', 'asar-tools.js'));
 
 if (process.platform !== 'darwin') {
   console.error('dualize only works on macOS.');
@@ -54,10 +55,22 @@ function getEntry(name) {
   return readRegistry().find((e) => e.name === name);
 }
 
-function signatureOk(appPath) {
-  if (!fs.existsSync(appPath)) return null; // missing
-  const r = spawnSync('codesign', ['--verify', '--deep', appPath]);
-  return r.status === 0;
+// 'missing' | 'ok' | 'needs repair (<why>)'
+//
+// Besides the code signature, check the ElectronAsarIntegrity hash: an app
+// auto-update (or an older version of this tool) can leave Info.plist pointing
+// at a hash that no longer matches app.asar, which makes fuse-protected apps
+// such as Claude crash the instant they launch.
+function health(appPath) {
+  if (!fs.existsSync(appPath)) return 'missing';
+  if (spawnSync('codesign', ['--verify', '--deep', appPath]).status !== 0) return 'needs repair (code signature)';
+  try {
+    const { entries } = asarTools.bundleIntegrity(appPath);
+    if (entries && entries.some((e) => e.exists && !e.ok)) return 'needs repair (asar integrity hash)';
+  } catch {
+    /* not an Electron app, or unreadable asar: nothing more to check */
+  }
+  return 'ok';
 }
 
 function list() {
@@ -68,10 +81,8 @@ function list() {
   }
   console.log('');
   for (const e of entries) {
-    const ok = signatureOk(e.dest);
-    const status = ok === null ? 'missing' : ok ? 'ok' : 'needs repair';
     console.log(`  ${e.name}`);
-    console.log(`    status : ${status}`);
+    console.log(`    status : ${health(e.dest)}`);
     console.log(`    from   : ${e.source}`);
     console.log(`    app    : ${e.dest}`);
     console.log(`    data   : ${dataDir(e.name)}`);
@@ -119,8 +130,7 @@ function repair() {
   }
 
   for (const e of targets) {
-    const ok = signatureOk(e.dest);
-    if (all && ok === true) {
+    if (all && health(e.dest) === 'ok') {
       console.log(`✓ ${e.name}: healthy, skipping`);
       continue;
     }
@@ -144,7 +154,7 @@ function help() {
   console.log(`dualize — manage macOS app clones
 
   dualize clone --source <app> --name <name> [options]   Create a clone
-  dualize list                                            Show recorded clones + health
+  dualize list                                            Show recorded clones + health (signature, asar hash)
   dualize repair "<name>"                                 Re-apply after an auto-update
   dualize repair --all                                    Repair every unhealthy clone
   dualize remove "<name>" [--purge]                       Delete a clone (--purge = its data too)

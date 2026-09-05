@@ -20,6 +20,31 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   validation.
 - Issue/PR templates, `SECURITY.md`, and this changelog.
 
+### Fixed
+- **Clones crashed on launch with `EXC_BREAKPOINT` (SIGTRAP)** for apps built with
+  Electron's asar-integrity fuse — Claude among them — whenever the CLI was run from a
+  bare `git clone` ([#1]). The `ElectronAsarIntegrity` hash step used
+  `npx -p @electron/asar node -e 'require("@electron/asar")…'`, but `npx -p` only puts
+  a package's binaries on `PATH` and does not make it `require()`-able, so the step
+  silently failed and left the hash stale. The hash is now computed with Node built-ins
+  only (`src/asar-tools.js`), re-verified after signing, and any failure aborts the
+  clone instead of printing "Done".
+- The repacked `app.asar` keeps **exactly the original `app.asar.unpacked` layout**
+  instead of a fixed `*.node / *.dylib / spawn-helper` glob (which missed, e.g., Claude's
+  `github-mcp-server` binary), and the clone fails if the layout can't be reproduced.
+- Files in `app.asar.unpacked` **keep their permissions**. `asar extract`/`pack` wrote them
+  as `0644`, so node-pty's `spawn-helper` (Claude Code terminals), bundled MCP server
+  binaries and native addons lost their executable bit in every clone.
+- The isolation snippet is inserted **after** the entry file's `"use strict"` directive,
+  so the app bundle keeps running in strict mode.
+- The icon badge no longer silently skips when `pngjs` isn't installed locally; it is
+  resolved from the `npx` cache as well.
+- `dualize list` / `dualize repair --all` health now also checks the asar integrity hash.
+- Unsupported entry points (ES-module mains) are reported instead of producing a clone
+  that shares the original's data.
+
+[#1]: https://github.com/vishalmeena2211/mac-app-dualizer/issues/1
+
 ## [1.0.0]
 
 ### Added

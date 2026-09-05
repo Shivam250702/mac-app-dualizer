@@ -6,16 +6,30 @@
 //
 // Usage: node iconbadge.js --dir <iconset-dir> --color "#d97757"
 //
-// Requires the pure-JS `pngjs` package (a dependency of this project). When run
-// from the CLI without a local install, invoke via:
+// Requires the pure-JS `pngjs` package (a dependency of this project). It is
+// resolved from this checkout's node_modules, from the current directory, or —
+// when invoked from a bare git clone as
 //   npx --yes -p pngjs node src/iconbadge.js --dir ... --color ...
+// — from the npx cache. (npx only puts that cache's bin/ on PATH; its packages
+// are not require()-able on their own, which used to make this step skip silently.)
 //
 const fs = require('node:fs');
 const path = require('node:path');
 
+function loadPngjs() {
+  const starts = [__dirname, process.cwd()];
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    // "<prefix>/node_modules/.bin" -> "<prefix>", whose node_modules require() will search
+    if (path.basename(dir) === '.bin' && path.basename(path.dirname(dir)) === 'node_modules') {
+      starts.push(path.dirname(path.dirname(dir)));
+    }
+  }
+  return require(require.resolve('pngjs', { paths: starts }));
+}
+
 let PNG;
 try {
-  ({ PNG } = require('pngjs'));
+  ({ PNG } = loadPngjs());
 } catch {
   console.error('iconbadge: pngjs not available; skipping icon badge.');
   process.exit(2);
