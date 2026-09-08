@@ -93,6 +93,26 @@ function uncache(asar, asarPath) {
  * Unpack app.asar, prepend the isolation snippet to the entry point, repack.
  * Returns { ok, error } — never throws.
  */
+// A "use strict" directive only takes effect when it is the very first statement
+// of the file, so prepending code in front of it silently drops the WHOLE bundle
+// into sloppy mode. Claude's entry point (.vite/build/index.pre.js) opens with
+// exactly that directive, and a sloppy-mode clone does not start at all. Insert
+// after any shebang and directive prologue instead — the same rule the macOS
+// path applies in asar-tools.js.
+function spliceAfterPrologue(src, snippet) {
+  let at = 0;
+  if (src.startsWith('#!')) at = src.indexOf('\n') + 1 || src.length;
+  // A prologue may hold several directives ("use strict", "use asm", ...).
+  for (;;) {
+    const d = /^\s*(?:"[^"]*"|'[^']*')\s*;?/.exec(src.slice(at));
+    if (!d) break;
+    at += d[0].length;
+  }
+  const head = src.slice(0, at);
+  const sep = at > 0 && !head.endsWith('\n') ? '\n' : '';
+  return head + sep + snippet + src.slice(at);
+}
+
 async function injectIsolation(asarPath, cloneName, aumid, log) {
   const asar = loadAsar();
   if (!asar) return { ok: false, error: '@electron/asar not installed (run: npm install)' };
@@ -137,7 +157,7 @@ async function injectIsolation(asarPath, cloneName, aumid, log) {
     if (esm) log(`      entry point is an ES module (${entry})`);
 
     const original = fs.readFileSync(entryFile, 'utf8');
-    fs.writeFileSync(entryFile, isolationSnippet(cloneName, aumid, esm) + original);
+    fs.writeFileSync(entryFile, spliceAfterPrologue(original, isolationSnippet(cloneName, aumid, esm)));
 
     // Build the replacement off to the side and prove it is readable before
     // touching the real one. A half-written app.asar is not a degraded clone,
