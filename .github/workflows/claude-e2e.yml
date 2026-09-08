@@ -1,6 +1,3 @@
-# Throwaway harness: install the real Claude Desktop on a Windows runner and
-# dualize it. Not part of the upstream PR — this branch exists to answer
-# "does this actually work on a Windows machine with a real app?".
 name: Claude E2E (Windows)
 
 on:
@@ -17,175 +14,104 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund
 
-      - name: Download Claude Desktop (official Anthropic build)
+      - name: Install Claude Desktop
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $url = 'https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe'
           $out = "$env:RUNNER_TEMP\Claude-Setup-x64.exe"
           Invoke-WebRequest -Uri $url -OutFile $out
-          $f = Get-Item $out
-          Write-Host "downloaded : $($f.Length) bytes"
-          Write-Host "sha256     : $((Get-FileHash $out -Algorithm SHA256).Hash)"
-          "SETUP=$out" | Out-File -Append $env:GITHUB_ENV
-
-      - name: Install it
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          # Squirrel installers exit immediately and keep working in the background,
-          # then auto-launch the app. Give it room, then stop whatever it started.
-          Start-Process -FilePath $env:SETUP -PassThru | Out-Null
+          Start-Process -FilePath $out -PassThru | Out-Null
           Start-Sleep -Seconds 90
           Get-Process claude -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 5
-          Write-Host '--- %LOCALAPPDATA%\AnthropicClaude ---'
-          Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -ErrorAction SilentlyContinue |
-            Select-Object Mode, Length, Name | Format-Table | Out-String -Width 120
-
-      - name: Locate the Electron app directory
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $asar = Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -Recurse -Filter app.asar `
-                    -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $asar) { Write-Error 'no app.asar found — Claude did not install'; exit 1 }
+          $asar = Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -Recurse -Filter app.asar | Select-Object -First 1
           $appDir = Split-Path (Split-Path $asar.FullName -Parent) -Parent
-          Write-Host "app dir  : $appDir"
-          Write-Host "app.asar : $([math]::Round($asar.Length/1MB,1)) MB"
-          Get-ChildItem $appDir -Filter *.exe | Select-Object Name, Length |
-            Format-Table | Out-String -Width 120
+          Write-Host "app dir: $appDir"
           "APPDIR=$appDir" | Out-File -Append $env:GITHUB_ENV
 
-      - name: What does the tool see?
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          node -e "const a=require('./src/win/appinfo');const i=a.inspectApp(process.argv[1]);console.log(JSON.stringify(i,null,2));console.log('asar integrity enforced:', a.detectAsarIntegrity(i.exe))" "$env:APPDIR"
-
-      - name: Baseline — data dirs before cloning
-        shell: pwsh
-        run: |
-          Get-ChildItem "$env:APPDATA" -Directory |
-            Where-Object { $_.Name -like 'Claude*' } |
-            Select-Object Name, CreationTime | Format-Table | Out-String -Width 120
-
-      - name: Dualize it
+      # CONTROL: the untouched app must launch, or nothing below means anything.
+      - name: CONTROL — does the ORIGINAL launch?
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          & .\clone-app.ps1 -Source "$env:APPDIR" -Name "Claude 2" -DestDir "$env:RUNNER_TEMP\Programs" -Desktop
-          Write-Host "clone-app.ps1 exit: $LASTEXITCODE"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Inspect what was produced
-        if: always()
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $dest = "$env:RUNNER_TEMP\Programs\Claude 2"
-          Get-ChildItem $dest -ErrorAction SilentlyContinue |
-            Select-Object Mode, Length, Name | Format-Table | Out-String -Width 120
-
-          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk"
-          if (Test-Path $lnk) {
-            $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-            Write-Host "shortcut target : $($sc.TargetPath)"
-            Write-Host "shortcut args   : $($sc.Arguments)"
-            Write-Host "shortcut icon   : $($sc.IconLocation)"
-          } else { Write-Host '::warning::no Start Menu shortcut' }
-
-          # Did the isolation snippet make it into the repacked archive, or was
-          # injection skipped because the exe enforces asar integrity?
-          $clonedAsar = Join-Path $dest 'resources\app.asar'
-          if (Test-Path $clonedAsar) {
-            $ex = "$env:RUNNER_TEMP\cloned-extract"
-            npx --yes @electron/asar extract $clonedAsar $ex 2>$null
-            $hits = Get-ChildItem $ex -Recurse -File -Include *.js -ErrorAction SilentlyContinue |
-                    Select-String -Pattern 'mac-app-dualizer: isolated userData' -List
-            if ($hits) { $hits | ForEach-Object { Write-Host "snippet found in: $($_.Path)" } }
-            else { Write-Host 'snippet NOT in the archive (expected if integrity is enforced)' }
-          }
-
-      - name: Launch the ORIGINAL, then the CLONE
-        if: always()
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $origExe = Get-ChildItem "$env:APPDIR" -Filter *.exe | Select-Object -First 1
-
-          Write-Host "--- launching original: $($origExe.FullName)"
-          Start-Process -FilePath $origExe.FullName | Out-Null
-          Start-Sleep -Seconds 60
-          Get-Process | Where-Object { $_.ProcessName -like 'claude*' } |
-            Select-Object Id, ProcessName, MainWindowTitle | Format-Table | Out-String -Width 120
-          Get-Process | Where-Object { $_.ProcessName -like 'claude*' } | Stop-Process -Force
+          Start-Process -FilePath "$env:APPDIR\claude.exe" | Out-Null
+          Start-Sleep -Seconds 50
+          $p = @(Get-Process claude -ErrorAction SilentlyContinue)
+          Write-Host "original processes: $($p.Count)"
+          $n = (Get-ChildItem "$env:APPDATA\Claude" -Recurse -File -EA SilentlyContinue).Count
+          Write-Host "%APPDATA%\Claude file count: $n"
+          if ($p.Count -eq 0) { Write-Host '::error::the ORIGINAL did not launch — runner cannot host this app' }
+          $p | Stop-Process -Force
           Start-Sleep -Seconds 10
 
-          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk"
-          Write-Host "--- launching clone via its shortcut: $lnk"
-          if (Test-Path $lnk) { Start-Process -FilePath $lnk | Out-Null }
-          Start-Sleep -Seconds 75
-          Get-Process | Where-Object { $_.ProcessName -like '*laude*' } |
-            Select-Object Id, ProcessName, MainWindowTitle | Format-Table | Out-String -Width 120
+      - name: Clone A (default — inject into app.asar)
+        shell: pwsh
+        run: |
+          & .\clone-app.ps1 -Source "$env:APPDIR" -Name "Claude A" -DestDir "$env:RUNNER_TEMP\P"
+          Write-Host "exit: $LASTEXITCODE"
 
-          # The decisive detail: did --user-data-dir actually reach the process?
-          Write-Host '--- command lines of the running clone ---'
-          Get-CimInstance Win32_Process -Filter "Name like '%laude%'" |
-            Select-Object -ExpandProperty CommandLine |
-            Where-Object { $_ -notlike '*--type=*' } |
-            ForEach-Object { Write-Host $_ }
+      - name: Clone B (--no-isolate — copy only, no injection)
+        shell: pwsh
+        run: |
+          & .\clone-app.ps1 -Source "$env:APPDIR" -Name "Claude B" -DestDir "$env:RUNNER_TEMP\P" --no-isolate
+          Write-Host "exit: $LASTEXITCODE"
 
-      - name: Screenshot the desktop
+      # Settles the contradiction between "app.asar repacked" and my earlier grep.
+      - name: Is the snippet REALLY in Clone A's archive?
         if: always()
         continue-on-error: true
         shell: pwsh
         run: |
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-          $bmp.Save("$env:RUNNER_TEMP\desktop.png")
-          Write-Host "screenshot: $((Get-Item "$env:RUNNER_TEMP\desktop.png").Length) bytes"
+          $ErrorActionPreference = 'Continue'
+          $ex = "$env:RUNNER_TEMP\exA"
+          npx --yes @electron/asar extract "$env:RUNNER_TEMP\P\Claude A\resources\app.asar" $ex
+          $hits = Get-ChildItem $ex -Recurse -File | Select-String -Pattern 'isolated userData' -List
+          Write-Host "files in archive : $((Get-ChildItem $ex -Recurse -File).Count)"
+          Write-Host "snippet hits     : $($hits.Count)"
+          $hits | ForEach-Object { Write-Host "  $($_.Path)" }
+          $pkg = Get-Content "$ex\package.json" -Raw -EA SilentlyContinue
+          if ($pkg) { Write-Host "package.json main: $(($pkg | ConvertFrom-Json).main)" }
 
-      - name: THE ACTUAL QUESTION — two separate data directories?
+      - name: Does Clone A (injected) launch?
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          Get-Process | Where-Object { $_.ProcessName -like '*laude*' } | Stop-Process -Force
-          Start-Sleep -Seconds 5
+          $t0 = Get-Date
+          Start-Process -FilePath "$env:RUNNER_TEMP\P\Claude A\Claude A.exe" -ArgumentList '--user-data-dir="C:\ud-a"' | Out-Null
+          Start-Sleep -Seconds 50
+          $p = @(Get-CimInstance Win32_Process -Filter "Name = 'Claude A.exe'")
+          Write-Host "Clone A processes: $($p.Count)"
+          $p | Select-Object -First 2 -ExpandProperty CommandLine | ForEach-Object { Write-Host "  $_" }
+          Write-Host "C:\ud-a files: $((Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count)"
+          Get-Process 'Claude A' -EA SilentlyContinue | Stop-Process -Force
+          Write-Host '--- Application event log since launch ---'
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$t0} -EA SilentlyContinue |
+            Select-Object -First 8 TimeCreated, ProviderName, LevelDisplayName, @{n='Msg';e={$_.Message -replace "`n",' ' }} |
+            Format-List | Out-String -Width 200
+          Start-Sleep -Seconds 10
 
-          $dirs = Get-ChildItem "$env:APPDATA" -Directory | Where-Object { $_.Name -like 'Claude*' }
-          $dirs | Select-Object Name, CreationTime | Format-Table | Out-String -Width 120
-          foreach ($d in $dirs) {
-            $n = (Get-ChildItem $d.FullName -Recurse -File -ErrorAction SilentlyContinue).Count
-            Write-Host "$($d.Name): $n files"
-          }
-
-          $a = Test-Path "$env:APPDATA\Claude"
-          $b = Test-Path "$env:APPDATA\Claude 2"
-          Write-Host ""
-          Write-Host "original data dir (%APPDATA%\Claude)   : $a"
-          Write-Host "clone    data dir (%APPDATA%\Claude 2) : $b"
-          if ($a -and $b) { Write-Host '::notice::ISOLATION CONFIRMED — two independent data directories' }
-          else { Write-Host '::warning::isolation NOT confirmed' }
-
-      - name: dualize list / remove round-trip
+      - name: Does Clone B (not injected) launch?
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          node bin/dualize.js list
-          node bin/dualize.js remove "Claude 2" --purge
-          Write-Host "shortcut gone: $(-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk"))"
+          Start-Process -FilePath "$env:RUNNER_TEMP\P\Claude B\Claude B.exe" -ArgumentList '--user-data-dir="C:\ud-b"' | Out-Null
+          Start-Sleep -Seconds 50
+          $p = @(Get-CimInstance Win32_Process -Filter "Name = 'Claude B.exe'")
+          Write-Host "Clone B processes: $($p.Count)"
+          Write-Host "C:\ud-b files: $((Get-ChildItem 'C:\ud-b' -Recurse -File -EA SilentlyContinue).Count)"
+          Get-Process 'Claude B' -EA SilentlyContinue | Stop-Process -Force
 
-      - uses: actions/upload-artifact@v4
+      - name: VERDICT
         if: always()
-        with:
-          name: windows-e2e-evidence
-          path: |
-            ${{ runner.temp }}/desktop.png
-            ${{ runner.temp }}/Programs/Claude 2/*.ico
-          if-no-files-found: warn
+        shell: pwsh
+        run: |
+          $a = (Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count
+          $b = (Get-ChildItem 'C:\ud-b' -Recurse -File -EA SilentlyContinue).Count
+          Write-Host "injected clone  wrote $a files to its own data dir"
+          Write-Host "plain    clone  wrote $b files to its own data dir"
+          if ($a -gt 0) { Write-Host '::notice::injected clone RUNS and isolates' }
+          elseif ($b -gt 0) { Write-Host '::error::the COPY runs but the INJECTED clone does not — injection breaks the app' }
+          else { Write-Host '::error::neither clone runs — the copy/rename itself is the problem' }
