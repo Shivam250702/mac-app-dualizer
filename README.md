@@ -68,6 +68,134 @@ See **[Example: two Claude instances](#example-two-claude-instances-different-ac
 
 ---
 
+## Windows — install and run (copy‑paste)
+
+Every block below is meant to be pasted into **Windows PowerShell** as‑is. None of
+it needs administrator rights.
+
+### 1. Install the prerequisites
+
+Node.js 18+ and Git. Skip either line if you already have it (`node -v`, `git --version`):
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Git.Git
+```
+
+Close and reopen PowerShell afterwards so the new `PATH` takes effect, then check:
+
+```powershell
+node -v
+git --version
+```
+
+### 2. Get the tool
+
+```powershell
+cd $HOME
+git clone https://github.com/Shivam250702/mac-app-dualizer.git
+cd mac-app-dualizer
+npm install
+```
+
+### 3. Let PowerShell run the script
+
+Windows blocks unsigned local scripts by default. This lifts it **for the current
+window only** — nothing permanent, no admin prompt:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+If you'd rather not change the policy at all, invoke the script directly instead
+and skip this step entirely:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\clone-app.ps1 -Source "<app>" -Name "<clone name>"
+```
+
+### 4. Find the app you want to clone
+
+`--source` wants the app's **install folder** (the one containing
+`resources\app.asar`) or its `.exe`. This lists every Electron app on the machine:
+
+```powershell
+Get-ChildItem "$env:LOCALAPPDATA", "$env:PROGRAMFILES", "${env:PROGRAMFILES(X86)}" `
+  -Recurse -Depth 4 -Filter app.asar -ErrorAction SilentlyContinue |
+  ForEach-Object { Split-Path (Split-Path $_.FullName -Parent) -Parent }
+```
+
+Claude installs into a versioned folder, so resolve it rather than hardcoding it:
+
+```powershell
+$claude = (Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -Directory -Filter 'app-*' |
+           Sort-Object Name -Descending | Select-Object -First 1).FullName
+$claude
+```
+
+### 5. Make the clone
+
+```powershell
+.\clone-app.ps1 -Source $claude -Name "Claude 2" -Desktop
+```
+
+Both flag styles work, so Windows and macOS docs read the same:
+
+```powershell
+.\clone-app.ps1 --source $claude --name "Claude 2" --desktop
+```
+
+### 6. Launch it
+
+Use the **Start Menu entry** (or the Desktop shortcut from `-Desktop`) — the
+shortcut is what carries the `--user-data-dir` that keeps the two logins apart:
+
+```powershell
+Start-Process "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk"
+```
+
+Its data lives in `%APPDATA%\Claude 2`, so it can hold a different account.
+
+### 7. Manage and remove
+
+```powershell
+node bin\dualize.js list                      # every clone + health
+node bin\dualize.js repair "Claude 2"         # re-apply after the app auto-updates
+node bin\dualize.js remove  "Claude 2"        # delete the clone, keep its data
+node bin\dualize.js remove  "Claude 2" --purge   # delete the data directory too
+```
+
+Quit the clone before removing it — Windows will not delete a running app.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `running scripts is disabled on this system` | Step 3 above |
+| `'node' is not recognized` | Reopen PowerShell after installing Node |
+| `clone-app.ps1 : ... -Source and -Name are required` | Quote paths containing spaces |
+| "Windows protected your PC" on first launch | *More info → Run anyway* — cloning invalidates the app's signature |
+| Clone opens the **original's** account | You launched the `.exe` directly; use the Start Menu shortcut (step 6) |
+| Clone doesn't start at all | See the known issue below — re-clone with `--mode link` |
+
+> ### Known issue — Claude Desktop and the default `clone` mode
+>
+> Verified on Windows Server 2025 with **Claude Desktop 0.14.10**: a clone made
+> with the default (`app.asar` injection) mode **does not launch** — it produces
+> no process at all, even though `clone-app.ps1` exits 0 and `dualize list`
+> reports it healthy. The same app cloned with `--mode link` or `--no-isolate`
+> launches normally and still gets its own data directory from the shortcut.
+>
+> Until that is fixed, clone Claude on Windows like this:
+>
+> ```powershell
+> .\clone-app.ps1 -Source $claude -Name "Claude 2" --mode link
+> ```
+>
+> You lose the distinct icon and taskbar identity; you keep the separate login,
+> and it survives Claude auto-updating.
+
+
 ## Quick start — CLI
 
 ### macOS
@@ -101,7 +229,7 @@ so you can log into a **different account**. Launch the clone from its new
 GNU-style flags work too, so the two platforms read the same:
 
 ```powershell
-.\clone-app.ps1 --source "C:\Program Files\Claude\Claude.exe" --name "Claude 2" --desktop
+.\clone-app.ps1 --source "C:\Program Files\Notion\Notion.exe" --name "Notion Work" --desktop
 ```
 
 ---
@@ -198,7 +326,10 @@ open -a "Claude 2"
 **Windows**
 
 ```powershell
-.\clone-app.ps1 --source "$env:LOCALAPPDATA\Programs\Claude\Claude.exe" --name "Claude 2"
+# Claude lives in a versioned folder, so resolve it first
+$claude = (Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -Directory -Filter 'app-*' |
+           Sort-Object Name -Descending | Select-Object -First 1).FullName
+.\clone-app.ps1 --source $claude --name "Claude 2" --mode link
 ```
 
 You'll now have the original **Claude** and a second **Claude 2**, each with its
@@ -290,6 +421,9 @@ see the caveat below.
   isolated by the shortcut's `--user-data-dir` instead. The tool tells you when
   this happens; **launch such a clone from its Start Menu entry**, not by
   double-clicking the `.exe`.
+- **Claude Desktop and the default `clone` mode.** An injected clone of Claude
+  0.14.10 does not launch (see the [known issue](#windows--install-and-run-copypaste)
+  above); use `--mode link` until that is resolved.
 - **SmartScreen.** Modifying an executable invalidates its Authenticode
   signature. The app still runs, but Windows may show a "Windows protected your
   PC" prompt the first time; choose *More info → Run anyway*.
