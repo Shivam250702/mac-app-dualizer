@@ -342,3 +342,49 @@ test('dataDir points at the platform-native location', () => {
   const mac = dataDir('Slack Work', 'darwin');
   assert.ok(mac.includes(path.join('Library', 'Application Support', 'Slack Work')));
 });
+
+test('injection keeps "use strict" as the first statement of the bundle', async () => {
+  // Claude's entry point (.vite/build/index.pre.js) opens with "use strict".
+  // Prepending in front of it drops the whole bundle into sloppy mode, and the
+  // clone then refuses to launch — verified against Claude 0.14.10 on Windows.
+  const dir = tmpdir();
+  const app = path.join(dir, 'app');
+  fs.mkdirSync(path.join(app, '.vite', 'build'), { recursive: true });
+  fs.writeFileSync(
+    path.join(app, 'package.json'),
+    JSON.stringify({ name: 'demo', main: '.vite/build/index.pre.js' })
+  );
+  fs.writeFileSync(
+    path.join(app, '.vite', 'build', 'index.pre.js'),
+    '"use strict";\nglobal.__ok = 1;\n'
+  );
+  const asarPath = path.join(dir, 'app.asar');
+  await asar.createPackage(app, asarPath);
+
+  const r = await injectIsolation(asarPath, 'Demo Two', 'com.dualizer.demo-two', () => {});
+  assert.strictEqual(r.ok, true, r.error);
+
+  const out = asar.extractFile(asarPath, '.vite/build/index.pre.js').toString('utf8');
+  assert.match(out, /^\s*(?:"use strict"|'use strict')\s*;/, 'the directive must still come first');
+  assert.ok(out.includes('Demo Two'), 'the snippet was injected');
+  assert.ok(
+    out.indexOf('"use strict"') < out.indexOf('Demo Two'),
+    'the snippet must sit AFTER the directive, not before it'
+  );
+});
+
+test('injection still lands after a shebang', async () => {
+  const dir = tmpdir();
+  const app = path.join(dir, 'app');
+  fs.mkdirSync(app, { recursive: true });
+  fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify({ main: 'main.js' }));
+  fs.writeFileSync(path.join(app, 'main.js'), '#!/usr/bin/env electron\n"use strict";\nvar a = 1;\n');
+  const asarPath = path.join(dir, 'app.asar');
+  await asar.createPackage(app, asarPath);
+
+  const r = await injectIsolation(asarPath, 'Sheb', 'com.dualizer.sheb', () => {});
+  assert.strictEqual(r.ok, true, r.error);
+  const out = asar.extractFile(asarPath, 'main.js').toString('utf8');
+  assert.ok(out.startsWith('#!/usr/bin/env electron\n'), 'shebang must stay on line 1');
+  assert.ok(out.indexOf('"use strict"') < out.indexOf('Sheb'), 'directive still precedes the snippet');
+});
