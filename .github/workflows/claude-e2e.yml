@@ -84,7 +84,8 @@ jobs:
           $p = @(Get-CimInstance Win32_Process -Filter "Name = 'Claude A.exe'")
           Write-Host "Clone A processes: $($p.Count)"
           $p | Select-Object -First 2 -ExpandProperty CommandLine | ForEach-Object { Write-Host "  $_" }
-          Write-Host "C:\ud-a files: $((Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count)"
+          Write-Host "C:\ud-a files            : $((Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count)"
+          Write-Host "%APPDATA%\Claude A files : $((Get-ChildItem "$env:APPDATA\Claude A" -Recurse -File -EA SilentlyContinue).Count)"
           Get-Process 'Claude A' -EA SilentlyContinue | Stop-Process -Force
           Write-Host '--- Application event log since launch ---'
           Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$t0} -EA SilentlyContinue |
@@ -108,7 +109,8 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $a = (Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count
+          $a = (Get-ChildItem 'C:\ud-a' -Recurse -File -EA SilentlyContinue).Count +
+               (Get-ChildItem "$env:APPDATA\Claude A" -Recurse -File -EA SilentlyContinue).Count
           $b = (Get-ChildItem 'C:\ud-b' -Recurse -File -EA SilentlyContinue).Count
           Write-Host "injected clone  wrote $a files to its own data dir"
           Write-Host "plain    clone  wrote $b files to its own data dir"
