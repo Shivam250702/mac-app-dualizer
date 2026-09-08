@@ -58,9 +58,10 @@ jobs:
           "APPDIR=$appDir" | Out-File -Append $env:GITHUB_ENV
 
       - name: What does the tool see?
+        continue-on-error: true
         shell: pwsh
         run: |
-          node -e "require('./src/win/appinfo').inspectApp(process.argv[1]).then(i=>console.log(JSON.stringify(i,null,2)))" "$env:APPDIR"
+          node -e "const a=require('./src/win/appinfo');const i=a.inspectApp(process.argv[1]);console.log(JSON.stringify(i,null,2));console.log('asar integrity enforced:', a.detectAsarIntegrity(i.exe))" "$env:APPDIR"
 
       - name: Baseline — data dirs before cloning
         shell: pwsh
@@ -124,9 +125,16 @@ jobs:
           $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk"
           Write-Host "--- launching clone via its shortcut: $lnk"
           if (Test-Path $lnk) { Start-Process -FilePath $lnk | Out-Null }
-          Start-Sleep -Seconds 60
+          Start-Sleep -Seconds 75
           Get-Process | Where-Object { $_.ProcessName -like '*laude*' } |
             Select-Object Id, ProcessName, MainWindowTitle | Format-Table | Out-String -Width 120
+
+          # The decisive detail: did --user-data-dir actually reach the process?
+          Write-Host '--- command lines of the running clone ---'
+          Get-CimInstance Win32_Process -Filter "Name like '%laude%'" |
+            Select-Object -ExpandProperty CommandLine |
+            Where-Object { $_ -notlike '*--type=*' } |
+            ForEach-Object { Write-Host $_ }
 
       - name: Screenshot the desktop
         if: always()
