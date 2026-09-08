@@ -68,7 +68,7 @@ See **[Example: two Claude instances](#example-two-claude-instances-different-ac
 
 ---
 
-## Windows — install and run (copy‑paste)
+## Windows — install and run (copy-paste)
 
 Every block below is meant to be pasted into **Windows PowerShell** as‑is. None of
 it needs administrator rights.
@@ -422,7 +422,7 @@ see the caveat below.
   this happens; **launch such a clone from its Start Menu entry**, not by
   double-clicking the `.exe`.
 - **Claude Desktop and the default `clone` mode.** An injected clone of Claude
-  0.14.10 does not launch (see the [known issue](#windows--install-and-run-copypaste)
+  0.14.10 does not launch (see the [known issue](#windows--install-and-run-copy-paste)
   above); use `--mode link` until that is resolved.
 - **SmartScreen.** Modifying an executable invalidates its Authenticode
   signature. The app still runs, but Windows may show a "Windows protected your
