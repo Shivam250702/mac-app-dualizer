@@ -31,13 +31,13 @@
   "engines": {
     "node": ">=18"
   },
-  "homepage": "https://github.com/Shivam250702/mac-app-dualizer#readme",
+  "homepage": "https://github.com/vishalmeena2211/mac-app-dualizer#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Shivam250702/mac-app-dualizer.git"
+    "url": "git+https://github.com/vishalmeena2211/mac-app-dualizer.git"
   },
   "bugs": {
-    "url": "https://github.com/Shivam250702/mac-app-dualizer/issues"
+    "url": "https://github.com/vishalmeena2211/mac-app-dualizer/issues"
   },
   "devDependencies": {
     "electron": "^31.0.0"

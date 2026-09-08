@@ -24,6 +24,7 @@ const { IS_WINDOWS, IS_MAC, dataDir, rmrf } = require('../src/platform');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'clone-app.sh');
+const asarTools = require(path.join(ROOT, 'src', 'asar-tools.js'));
 
 if (!IS_MAC && !IS_WINDOWS) {
   console.error(`dualize supports macOS and Windows; this is ${process.platform}.`);
@@ -117,6 +118,12 @@ async function clone() {
 
 // --- list --------------------------------------------------------------------
 
+// 'missing' | 'ok' | 'needs repair (<why>)' | 'unknown (…)'
+//
+// On macOS, besides the code signature, check the ElectronAsarIntegrity hash: an
+// app auto-update (or an older version of this tool) can leave Info.plist
+// pointing at a hash that no longer matches app.asar, which makes fuse-protected
+// apps such as Claude crash the instant they launch.
 function healthOf(entry) {
   // Entries written before platforms were recorded are assumed to belong to the
   // machine reading them.
@@ -124,8 +131,16 @@ function healthOf(entry) {
   if (platform === 'win32') return require('../src/win/clone').healthOf(entry);
   if (!IS_MAC) return 'unknown (created on another platform)';
   if (!entry.dest || !fs.existsSync(entry.dest)) return 'missing';
-  const r = spawnSync('codesign', ['--verify', '--deep', entry.dest]);
-  return r.status === 0 ? 'ok' : 'needs repair';
+  if (spawnSync('codesign', ['--verify', '--deep', entry.dest]).status !== 0) {
+    return 'needs repair (code signature)';
+  }
+  try {
+    const { entries } = asarTools.bundleIntegrity(entry.dest);
+    if (entries && entries.some((e) => e.exists && !e.ok)) return 'needs repair (asar integrity hash)';
+  } catch {
+    /* not an Electron app, or unreadable asar: nothing more to check */
+  }
+  return 'ok';
 }
 
 function list() {
