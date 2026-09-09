@@ -1,0 +1,57 @@
+# Verify the Windows clone path on a real Windows machine, without owning one.
+#
+# Never runs on its own — start it from the Actions tab ("Run workflow"), or
+# with:  gh workflow run verify-windows.yml --repo <owner>/<repo>
+#
+# It installs Claude Desktop on a throwaway runner and hands the actual checking
+# to tools/verify-windows.ps1 — the same script you would run on your own PC, so
+# the two paths can never drift apart.
+name: Verify Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_clones:
+        description: 'Leave the clones in place (for reading the logs)'
+        type: boolean
+        default: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+
+      - name: Install Claude Desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe'
+          $out = "$env:RUNNER_TEMP\Claude-Setup-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $out
+          Write-Host "sha256: $((Get-FileHash $out -Algorithm SHA256).Hash)"
+          Start-Process -FilePath $out -PassThru | Out-Null
+          Start-Sleep -Seconds 90
+          Get-Process claude -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 5
+          if (-not (Get-ChildItem "$env:LOCALAPPDATA\AnthropicClaude" -Recurse -Filter app.asar -EA SilentlyContinue)) {
+            Write-Error 'Claude did not install'; exit 1
+          }
+
+      - name: Run the verification script
+        shell: pwsh
+        run: |
+          $keep = '${{ inputs.keep_clones }}' -eq 'true'
+          if ($keep) { .\tools\verify-windows.ps1 -Keep } else { .\tools\verify-windows.ps1 }
+          $code = $LASTEXITCODE
+          Write-Host "verify-windows.ps1 exit code: $code"
+          switch ($code) {
+            0 { Write-Host '::notice::PASS - the default clone mode works' }
+            1 { Write-Host '::error::FAIL - default clone never started; --mode link works' }
+            default { Write-Host '::error::FAIL - neither clone started' }
+          }
+          exit $code
